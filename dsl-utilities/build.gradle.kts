@@ -62,8 +62,7 @@ dokka {
     dokkaSourceSets {
         configureEach {
             sourceLink {
-                remoteUrl =
-                    uri("https://github.com/xfqwdsj/dsl-utilities/tree/v${version}/${project.name}/src/${name}/kotlin")
+                remoteUrl = uri("https://github.com/xfqwdsj/dsl-utilities/tree/v${version}/${project.name}")
             }
             documentedVisibilities(VisibilityModifier.Public, VisibilityModifier.Protected)
         }
