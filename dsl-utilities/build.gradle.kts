@@ -11,15 +11,6 @@ plugins {
     signing
 }
 
-val htmlJar = tasks.register<Jar>("dokkaHtmlJar") {
-    dependsOn(tasks.dokkaGeneratePublicationHtml)
-    from(tasks.dokkaGeneratePublicationHtml.flatMap { it.outputDirectory })
-    archiveClassifier.set("javadoc")
-}
-
-tasks.withType<Sign>().configureEach { dependsOn(htmlJar.get()) }
-tasks.withType<AbstractPublishToMaven>().configureEach { mustRunAfter(tasks.withType<Sign>()) }
-
 kotlin {
     jvm {
         compilerOptions {
@@ -114,7 +105,7 @@ mavenPublishing {
 
     configure(
         KotlinMultiplatform(
-            javadocJar = JavadocJar.Dokka(htmlJar),
+            javadocJar = JavadocJar.Dokka(tasks.dokkaGeneratePublicationHtml),
         )
     )
 }
