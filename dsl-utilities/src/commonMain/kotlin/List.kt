@@ -12,7 +12,7 @@ import kotlin.reflect.KProperty
  *
  * @param I The original type of the elements in the list.
  * @param O The output type of the elements in the list after
- *    transformation.
+ *   transformation.
  */
 abstract class AbstractDslMutableList<I, O>(
     initial: MutableList<I> = mutableListOf(),
@@ -21,7 +21,7 @@ abstract class AbstractDslMutableList<I, O>(
      * The delegate list that stores the original type [I] values. This is
      * mutable and can be replaced with a new list.
      */
-    protected var delegate: MutableList<I> = initial
+    protected open var delegate: MutableList<I> = initial
 
     /**
      * Transforms the original type [I] to the output type [O]. This method
@@ -41,24 +41,32 @@ abstract class AbstractDslMutableList<I, O>(
         delegate = list.map { setTransform(it) }.toMutableList()
     }
 
-    override fun get(index: Int) = getTransform(delegate[index])
+    protected fun originalGet(index: Int) = getTransform(delegate[index])
 
-    override fun set(index: Int, element: O) = get(index).also {
+    override fun get(index: Int) = originalGet(index)
+
+    protected fun originalSet(index: Int, element: O) = originalGet(index).also {
         delegate[index] = setTransform(element)
     }
 
-    override fun add(index: Int, element: O) {
+    override fun set(index: Int, element: O) = originalSet(index, element)
+
+    protected fun originalAdd(index: Int, element: O) {
         delegate.add(index, setTransform(element))
     }
 
-    override fun removeAt(index: Int) = get(index).also {
+    override fun add(index: Int, element: O) = originalAdd(index, element)
+
+    protected fun originalRemoveAt(index: Int) = originalGet(index).also {
         delegate.removeAt(index)
     }
+
+    override fun removeAt(index: Int) = originalRemoveAt(index)
 
     override val size get() = delegate.size
 }
 
-interface DslReadOnlyListProperty<T> {
+interface DslReadOnlyListProperty<T> : DslMutableList<T> {
     /**
      * Gets the value of the property as a mutable list of type [T]. The
      * operations on this list is under the control of the DSL. DO NOT use this
@@ -74,7 +82,17 @@ interface DslReadWriteListProperty<T> : DslReadOnlyListProperty<T> {
     operator fun setValue(thisRef: Any?, property: KProperty<*>, value: MutableList<T>)
 }
 
-interface DslReplaceableList<T> {
+interface DslMutableList<T> : MutableList<T> {
+    fun <R> bypassHooks(block: BypassedHooks<T>.() -> R): R
+
+    @Dsl
+    interface BypassedHooks<T> : MutableList<T>
+
+    @DslMarker
+    annotation class Dsl
+}
+
+interface DslReplaceableList<T> : MutableList<T> {
     /** Replaces the current list with a new one. */
     fun replace(list: MutableList<T>)
 }

@@ -1,318 +1,148 @@
 package top.ltfan.dslutilities
 
-import kotlin.jvm.JvmName
-import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
-/**
- * Base class providing DSL property delegates for value handling,
- * including transformation, validation, and list management.
- */
-abstract class ValueDsl {
-    /**
-     * Creates a property delegate with custom get/set transformations.
-     *
-     * @param defaultValue The initial value.
-     * @param getTransform Transformation applied on get.
-     * @param setTransform Transformation applied on set.
-     */
-    protected open fun <I, O> value(
-        defaultValue: I,
-        getTransform: KProperty<*>.(I) -> O,
-        setTransform: KProperty<*>.(O) -> I
-    ) = object : ReadWriteProperty<Any?, O> {
-        private var stored: I = defaultValue
-
-        override fun getValue(thisRef: Any?, property: KProperty<*>): O =
-            property.getTransform(stored)
-
-        override fun setValue(thisRef: Any?, property: KProperty<*>, value: O) {
-            stored = property.setTransform(value)
-        }
-    }
-
-    /**
-     * Creates a property delegate with validation and transformation logic.
-     *
-     * @param defaultValue The initial value.
-     * @param getTransform Transformation applied on get.
-     * @param setTransform Transformation applied on set.
-     * @param validateGet Validation for get operation.
-     * @param validateSet Validation for set operation.
-     * @param messageBuilder Error message builder.
-     */
-    protected open fun <I, O> conditional(
-        defaultValue: I,
-        beforeGet: KProperty<*>.(I) -> Boolean = { true },
-        beforeSet: KProperty<*>.(O) -> Boolean = { true },
-        getTransform: KProperty<*>.(I) -> O,
-        setTransform: KProperty<*>.(O) -> I,
-        validateGet: KProperty<*>.(O) -> Boolean = { true },
-        validateSet: KProperty<*>.(I) -> Boolean = { true },
-        messageBuilder: (KProperty<*>.() -> Any) = { "Invalid value for property $name." },
-    ) = value(
-        defaultValue = defaultValue,
-        getTransform = {
-            require(beforeGet(it)) { messageBuilder() }
-            val value = getTransform(it)
-            require(validateGet(value)) { messageBuilder() }
-            value
-        },
-        setTransform = {
-            require(beforeSet(it)) { messageBuilder() }
-            val value = setTransform(it)
-            require(validateSet(value)) { messageBuilder() }
-            value
-        }
-    )
-
-    /**
-     * Creates a required (non-null) property delegate.
-     *
-     * @param getTransform Transformation applied on get.
-     * @param setTransform Transformation applied on set.
-     * @param messageBuilder Error message builder.
-     */
-    protected open fun <T> required(
-        getTransform: KProperty<*>.(T) -> T = { it },
-        setTransform: KProperty<*>.(T) -> T = { it },
-        messageBuilder: (KProperty<*>.() -> Any) = { "Property is required and cannot be null." },
-    ) = conditional(
-        defaultValue = null as T?,
-        beforeGet = { it != null },
-        beforeSet = { it != null },
-        getTransform = { getTransform(it!!) },
-        setTransform = { setTransform(it!!) },
-        messageBuilder = messageBuilder
-    )
-
-    /**
-     * Creates a property delegate with a default value and optional
-     * transformations.
-     *
-     * @param defaultValue The initial value.
-     * @param getTransform Transformation applied on get.
-     * @param setTransform Transformation applied on set.
-     */
-    protected open fun <T> prepared(
-        defaultValue: T,
-        getTransform: KProperty<*>.(T) -> T = { it },
-        setTransform: KProperty<*>.(T) -> T = { it },
-    ) = value(defaultValue, getTransform, setTransform)
-
-    /**
-     * Creates an optional property delegate (nullable).
-     *
-     * @param getTransform Transformation applied on get.
-     * @param setTransform Transformation applied on set.
-     */
-    protected open fun <T> optional(
-        getTransform: KProperty<*>.(T?) -> T? = { it },
-        setTransform: KProperty<*>.(T?) -> T? = { it },
-    ) = prepared(null, getTransform, setTransform)
-
-    /**
-     * Internal: Creates a read-write list property delegate with
-     * transformations and hooks.
-     *
-     * @param initial Initial list.
-     * @param getTransform Transformation for getting elements.
-     * @param setTransform Transformation for setting elements.
-     * @param beforeAccess Hook before accessing the list.
-     * @param beforeReplace Hook before replacing the list.
-     */
-    private fun <I, O> dslReadWriteListProperty(
-        initial: MutableList<I> = mutableListOf(),
-        getTransform: MutableList<O>.(I) -> O,
-        setTransform: MutableList<O>.(O) -> I,
-        beforeAccess: (MutableList<O>) -> Unit = {},
-        beforeReplace: (MutableList<O>) -> Unit = {},
-    ): DslReadWriteListProperty<O> =
-        object : DslReadWriteListProperty<O>, MutableList<O>, AbstractDslMutableList<I, O>(initial) {
-            override fun getTransform(original: I): O = getTransform.invoke(this, original)
-            override fun setTransform(original: O): I = setTransform.invoke(this, original)
-
-            override fun getValue(thisRef: Any?, property: KProperty<*>): MutableList<O> {
-                beforeAccess(this)
-                return this
-            }
-
-            override fun replace(list: MutableList<O>) {
-                beforeReplace(list)
-                super.replace(list)
-            }
-
-            override fun setValue(thisRef: Any?, property: KProperty<*>, value: MutableList<O>) {
-                replace(value)
-            }
-        }
-
-    /**
-     * Creates a mutable list property delegate with transformations and a
-     * hook.
-     *
-     * @param initial Initial list.
-     * @param getTransform Transformation for getting elements.
-     * @param setTransform Transformation for setting elements.
-     * @param beforeAccess Hook before accessing the list.
-     */
-    protected open fun <I, O> value(
-        initial: MutableList<I> = mutableListOf(),
-        getTransform: MutableList<O>.(I) -> O,
-        setTransform: MutableList<O>.(O) -> I,
-        beforeAccess: (MutableList<O>) -> Unit = {},
-    ) = object : DslReadOnlyListProperty<O> {
-        val delegate = dslReadWriteListProperty(initial, getTransform, setTransform, beforeAccess)
-        override fun getValue(thisRef: Any?, property: KProperty<*>) = delegate.getValue(thisRef, property)
-    }
-
-    /**
-     * Creates a replaceable mutable list property delegate with
-     * transformations and hooks.
-     *
-     * @param initial Initial list.
-     * @param getTransform Transformation for getting elements.
-     * @param setTransform Transformation for setting elements.
-     * @param beforeAccess Hook before accessing the list.
-     * @param beforeReplace Hook before replacing the list.
-     */
-    protected open fun <I, O> value(
-        initial: MutableList<I> = mutableListOf(),
-        getTransform: MutableList<O>.(I) -> O,
-        setTransform: MutableList<O>.(O) -> I,
-        beforeAccess: (MutableList<O>) -> Unit = {},
-        beforeReplace: (MutableList<O>) -> Unit = {},
-    ) = object : DslReadWriteListProperty<O> {
-        val delegate = dslReadWriteListProperty(initial, getTransform, setTransform, beforeAccess, beforeReplace)
-        override fun getValue(thisRef: Any?, property: KProperty<*>) = delegate.getValue(thisRef, property)
-        override fun setValue(thisRef: Any?, property: KProperty<*>, value: MutableList<O>) {
-            delegate.setValue(thisRef, property, value)
-        }
-    }
-
-    /**
-     * Creates a non-replaceable mutable list property delegate with element
-     * transformations and a hook.
-     *
-     * @param initial Initial list.
-     * @param getTransform Transformation for getting elements.
-     * @param setTransform Transformation for setting elements.
-     * @param beforeAccess Hook before accessing the list.
-     */
-    protected open fun <T> list(
-        initial: MutableList<T> = mutableListOf(),
-        getTransform: (T) -> T = { it },
-        setTransform: (T) -> T = { it },
-        beforeAccess: (MutableList<T>) -> Unit = {},
-    ) = value(
-        initial = initial,
-        getTransform = { getTransform(it) },
-        setTransform = { setTransform(it) },
-        beforeAccess = beforeAccess,
-    )
-
-    /**
-     * Creates a replaceable list property delegate with element
-     * transformations and hooks.
-     *
-     * @param initial Initial list.
-     * @param getTransform Transformation for getting elements.
-     * @param setTransform Transformation for setting elements.
-     * @param beforeAccess Hook before accessing the list.
-     * @param beforeReplace Hook before replacing the list.
-     */
-    protected open fun <T> replaceableList(
-        initial: MutableList<T> = mutableListOf(),
-        getTransform: (T) -> T = { it },
-        setTransform: (T) -> T = { it },
-        beforeAccess: (MutableList<T>) -> Unit = {},
-        beforeReplace: (MutableList<T>) -> Unit = {},
-    ) = value(
-        initial = initial,
-        getTransform = { getTransform(it) },
-        setTransform = { setTransform(it) },
-        beforeAccess = beforeAccess,
-        beforeReplace = beforeReplace,
-    )
+interface Value<T> {
+    var value: T
 }
 
-/**
- * Extension of [ValueDsl] that adds locking functionality to prevent
- * further modifications.
- */
-abstract class LockableValueDsl : ValueDsl() {
-    private var _isLocked = false
-    private var _isInBeforeAccess = false
+interface DslValue<T, P> : Value<T>, KProperty<P> {
+    fun <R> bypassHooks(block: BypassedHooks<T>.() -> R): R
 
-    /** Indicates whether the DSL is locked. */
-    val isLocked: Boolean
-        get() = _isLocked
+    @Dsl
+    interface BypassedHooks<T> : Value<T>
 
-    /** Locks the DSL, preventing further modifications. */
-    protected fun lock() {
-        _isLocked = true
+    @DslMarker
+    annotation class Dsl
+}
+
+class ValueProperty<I, O>(
+    initial: I,
+    private val beforeGet: DslValue<O, *>.(I) -> Unit = {},
+    private val beforeSet: DslValue<O, *>.(O) -> Unit = {},
+    private val getTransform: (I) -> O,
+    private val setTransform: (O) -> I,
+    private val afterGet: DslValue<O, *>.(O) -> Unit = {},
+    private val afterSet: DslValue<O, *>.(I) -> Unit = {},
+    getBypassedHooksValue: (DslValue.BypassedHooks<O>) -> Unit = {},
+) {
+    private var stored: I = initial
+
+    private fun getValue() = getTransform(stored)
+
+    private fun KProperty<*>.getValueWithHooks(): O {
+        val dslValue = this.dslValue()
+        dslValue.beforeGet(stored)
+        return getValue().also { dslValue.afterGet(it) }
     }
 
-    @JvmName("validateSetTransform")
-    private inline fun <I, O> validate(crossinline setTransform: MutableList<O>.(O) -> I): MutableList<O>.(O) -> I = {
-        check(!isLocked || _isInBeforeAccess) {
-            "MutableList ${this::class.simpleName} of class ${this@LockableValueDsl::class.simpleName} is locked and its elements cannot be modified."
-        }
-        setTransform(it)
+    operator fun getValue(thisRef: Any?, property: KProperty<*>) = property.getValueWithHooks()
+
+    private fun setValue(value: O) = setTransform(value).let {
+        stored = it
+        it
     }
 
-    @JvmName("validateBeforeReplace")
-    private inline fun <T> validate(crossinline beforeReplace: (MutableList<T>) -> Unit): (MutableList<T>) -> Unit = {
-        check(!isLocked || _isInBeforeAccess) {
-            "MutableList ${it::class.simpleName} of class ${this::class.simpleName} is locked and its elements cannot be modified."
-        }
-        beforeReplace(it)
+    private fun KProperty<*>.setValueWithHooks(value: O) {
+        val dslValue = dslValue()
+        dslValue.beforeSet(value)
+        setValue(value).also { dslValue.afterSet(it) }
     }
 
-    private inline fun <I, O> validate(crossinline setTransform: KProperty<*>.(O) -> I): KProperty<*>.(O) -> I = {
-        check(!isLocked || _isInBeforeAccess) { "Class ${this@LockableValueDsl::class.simpleName} is locked and the property $name cannot be modified." }
-        setTransform(it)
+    operator fun setValue(thisRef: Any?, property: KProperty<*>, value: O) {
+        property.setValueWithHooks(value)
     }
 
-    private inline fun <T> wrapBeforeAccess(crossinline beforeAccess: (MutableList<T>) -> Unit): (MutableList<T>) -> Unit =
-        { list ->
-            _isInBeforeAccess = true
-            try {
-                beforeAccess(list)
-            } finally {
-                _isInBeforeAccess = false
+    private fun KProperty<*>.value() = object : Value<O> {
+        override var value: O
+            get() = getValueWithHooks()
+            set(value) {
+                setValueWithHooks(value)
             }
+    }
+
+    private fun <P> KProperty<P>.dslValue(): DslValue<O, P> =
+        object : DslValue<O, P>, Value<O> by value(), KProperty<P> by this {
+            override fun <R> bypassHooks(block: DslValue.BypassedHooks<O>.() -> R) = bypassedHooksValue.block()
         }
 
-    override fun <I, O> value(
-        defaultValue: I,
-        getTransform: KProperty<*>.(I) -> O,
-        setTransform: KProperty<*>.(O) -> I,
-    ) = super.value(defaultValue, getTransform, validate(setTransform))
+    val bypassedHooksValue = object : DslValue.BypassedHooks<O> {
+        override var value: O
+            get() = getValue()
+            set(value) {
+                setValue(value)
+            }
+    }
 
-    override fun <I, O> value(
-        initial: MutableList<I>,
-        getTransform: MutableList<O>.(I) -> O,
-        setTransform: MutableList<O>.(O) -> I,
-        beforeAccess: (MutableList<O>) -> Unit,
-    ) = super.value(
-        initial = initial,
-        getTransform = getTransform,
-        setTransform = validate(setTransform),
-        beforeAccess = wrapBeforeAccess(beforeAccess)
-    )
+    init {
+        getBypassedHooksValue(bypassedHooksValue)
+    }
+}
 
-    override fun <I, O> value(
-        initial: MutableList<I>,
-        getTransform: MutableList<O>.(I) -> O,
-        setTransform: MutableList<O>.(O) -> I,
-        beforeAccess: (MutableList<O>) -> Unit,
-        beforeReplace: (MutableList<O>) -> Unit,
-    ) = super.value(
-        initial = initial,
-        getTransform = getTransform,
-        setTransform = validate(setTransform),
-        beforeAccess = wrapBeforeAccess(beforeAccess),
-        beforeReplace = validate(beforeReplace),
-    )
+class ListProperty<I, O>(
+    initial: MutableList<I> = mutableListOf(),
+    private val getTransform: DslMutableList<O>.(I) -> O,
+    private val setTransform: DslMutableList<O>.(O) -> I,
+    private val beforeGet: DslMutableList<O>.(Int) -> Unit = {},
+    private val beforeSet: DslMutableList<O>.(Int, O) -> Unit = { _, _ -> },
+    private val beforeRemove: DslMutableList<O>.(Int) -> Unit = {},
+    private val beforeAccess: DslMutableList<O>.() -> Unit = {},
+    private val beforeReplace: DslMutableList<O>.(MutableList<O>) -> Unit = {},
+    private val accessTransform: DslMutableList<O>.() -> MutableList<O> = { this },
+    getDslMutableList: (DslMutableList<O>) -> Unit = {},
+) : DslReadWriteListProperty<O>, AbstractDslMutableList<I, O>(initial) {
+    override fun getTransform(original: I): O = getTransform.invoke(this, original)
+    override fun setTransform(original: O): I = setTransform.invoke(this, original)
+
+    override fun getValue(thisRef: Any?, property: KProperty<*>): MutableList<O> {
+        beforeAccess()
+        return accessTransform()
+    }
+
+    private fun superReplace(list: MutableList<O>) = super.replace(list)
+
+    override fun replace(list: MutableList<O>) {
+        beforeReplace(list)
+        superReplace(list)
+    }
+
+    override fun setValue(thisRef: Any?, property: KProperty<*>, value: MutableList<O>) {
+        replace(value)
+    }
+
+    override fun get(index: Int): O {
+        beforeGet(index)
+        return originalGet(index)
+    }
+
+    override fun set(index: Int, element: O): O {
+        beforeSet(index, element)
+        return originalSet(index, element)
+    }
+
+    override fun add(index: Int, element: O) {
+        beforeSet(index, element)
+        originalAdd(index, element)
+    }
+
+    override fun removeAt(index: Int): O {
+        beforeRemove(index)
+        return originalRemoveAt(index)
+    }
+
+    override fun <R> bypassHooks(block: DslMutableList.BypassedHooks<O>.() -> R) = bypassedHooksList.block()
+
+    val bypassedHooksList: DslMutableList.BypassedHooks<O> =
+        object : DslMutableList.BypassedHooks<O>, DslReplaceableList<O>, AbstractMutableList<O>() {
+            override fun get(index: Int) = originalGet(index)
+            override fun set(index: Int, element: O) = originalSet(index, element)
+            override fun add(index: Int, element: O) = originalAdd(index, element)
+            override fun removeAt(index: Int) = originalRemoveAt(index)
+            override fun replace(list: MutableList<O>) = superReplace(list)
+            override val size get() = this@ListProperty.size
+        }
+
+    init {
+        getDslMutableList(this)
+    }
 }
