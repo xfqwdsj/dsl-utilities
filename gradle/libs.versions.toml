@@ -3,7 +3,7 @@
 # https://docs.gradle.org/current/userguide/platforms.html#sub::toml-dependencies-format
 
 [versions]
-kotlin = "2.2.10"
+kotlin = "2.2.20"
 dokka = "2.0.0"
 mavenPublish = "0.34.0"
 
