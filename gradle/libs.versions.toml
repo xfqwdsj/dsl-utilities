@@ -5,7 +5,7 @@
 [versions]
 kotlin = "2.3.0"
 dokka = "2.1.0"
-mavenPublish = "0.35.0"
+mavenPublish = "0.36.0"
 
 [libraries]
 
