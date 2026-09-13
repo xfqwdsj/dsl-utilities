@@ -24,6 +24,14 @@ object IntStringMapper : DslMapper<Int, String> {
     override fun toValue(stored: Int): String = stored.toString()
 }
 
+abstract class BaseIntStringMapper : DslMapper<Int, String> {
+    override fun toValue(stored: Int): String = stored.toString()
+}
+
+object GenericBaseMapper : BaseIntStringMapper() {
+    override fun toStored(value: String): Int = value.toInt()
+}
+
 object UpperCaseMapper : DslMapper<String, String> {
     override fun toStored(value: String): String = value.lowercase()
 
@@ -39,6 +47,9 @@ interface SampleDsl {
 
     @DslValue(initial = "1", mapper = IntStringMapper::class)
     var intToString: String
+
+    @DslValue(initial = "2", mapper = GenericBaseMapper::class)
+    var genericBaseToString: String
 
     @DslValue(
         initial = "2",

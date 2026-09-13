@@ -64,7 +64,7 @@ interface PersonDsl {
 
     // List properties are mutated inside the DSL block; their elements are
     // validated when the value is built.
-    @DslList(validator = PositiveIntValidator::class)
+    @DslList(validator = NonBlankValidator::class, message = "The tags must not be blank.")
     var tags: MutableList<String>
 }
 ```

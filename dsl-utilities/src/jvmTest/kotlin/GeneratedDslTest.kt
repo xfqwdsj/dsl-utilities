@@ -8,6 +8,7 @@ class SampleDslTest {
         val sample = buildSample(name = "required", title = "title")
 
         assertEquals("1", sample.intToString)
+        assertEquals("2", sample.genericBaseToString)
         assertEquals("2", sample.evenIntToString)
         assertNull(sample.nickname)
         assertEquals("DEFAULT", sample.prepared)
@@ -18,6 +19,7 @@ class SampleDslTest {
     fun `legal settings are stored`() {
         val sample = buildSample(name = "required", title = "title") {
             intToString = "10"
+            genericBaseToString = "20"
             evenIntToString = "4"
             nickname = "nick"
             prepared = "Prepared"
@@ -26,6 +28,7 @@ class SampleDslTest {
         }
 
         assertEquals("10", sample.intToString)
+        assertEquals("20", sample.genericBaseToString)
         assertEquals("4", sample.evenIntToString)
         assertEquals("nick", sample.nickname)
         assertEquals("PREPARED", sample.prepared)
