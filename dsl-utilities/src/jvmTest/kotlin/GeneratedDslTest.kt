@@ -423,4 +423,37 @@ class GenerationEdgeCaseTest {
 
         assertEquals("internal", (result.items.single() as InternalListChild).value)
     }
+
+    @Test
+    fun `backing names avoid DSL properties and child scopes`() {
+        val result = buildBackingNames {
+            items.add("item")
+            child { intensity = 0.5f }
+        }
+
+        assertEquals("name", result.name)
+        assertEquals("field", result.nameField)
+        assertEquals(listOf("item"), result.items)
+        assertEquals("items", result.itemsField)
+        assertEquals("child", result.childField)
+        assertEquals(0.5f, result.child.intensity)
+    }
+
+    @Test
+    fun `validator classes with default arguments are callable`() {
+        val result = buildConstructorValidator()
+
+        assertEquals("valid", result.value)
+        assertFailsWith<IllegalArgumentException> {
+            buildConstructorValidator { value = "invalid" }
+        }
+    }
+
+    @Test
+    fun `backing names avoid inherited concrete properties`() {
+        val builder = ConcreteBackingDslBuilder()
+
+        assertEquals("default", builder.nameField)
+        assertEquals("name", builder.build().name)
+    }
 }

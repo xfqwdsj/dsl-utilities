@@ -138,9 +138,31 @@ class DslProcessor(
             childScope(name, function, member.environment, checker)?.let(childScopes::add)
         }
 
+        val generatedPropertyNames = buildSet {
+            requiredProperties.mapTo(this) { it.name }
+            valueProperties.mapTo(this) { it.name }
+            listProperties.mapTo(this) { it.name }
+        }
+        for (scope in childScopes) {
+            if (scope.name in generatedPropertyNames) {
+                checker.report(
+                    spec,
+                    "@DslChild function ${scope.name} conflicts with a DSL property of the same name."
+                )
+            }
+        }
+
+        val memberNames = hierarchy.functionNames(spec) +
+                hierarchy.allProperties(spec).map { it.declaration.simpleName.asString() }
         val childOwners = mutableMapOf<String, String>()
         for (property in listProperties) {
             for (child in property.children) {
+                if (child.functionName in memberNames) {
+                    checker.report(
+                        spec,
+                        "Child helper ${child.functionName} of @DslList property ${property.name} conflicts with a DSL member."
+                    )
+                }
                 val previousOwner = childOwners.putIfAbsent(child.functionName, property.name)
                 if (previousOwner != null && previousOwner != property.name) {
                     checker.report(
@@ -156,7 +178,15 @@ class DslProcessor(
         val supertypeType =
             annotation?.type("supertype")?.takeIf { it.declaration.qualifiedName?.asString() != "kotlin.Unit" }
         val supertypeDeclaration = supertypeType?.declaration as? KSClassDeclaration
+        when {
+            supertypeType?.isError == true ->
+                checker.reportUnresolved(spec, "@DslBuilder.supertype of $specName is not resolvable yet.")
+
+            supertypeType != null && supertypeDeclaration?.classKind != ClassKind.INTERFACE ->
+                checker.report(spec, "@DslBuilder.supertype of $specName must be an interface.")
+        }
         val supertypeTypeName = supertypeType?.let { checker.renderTypeName(spec, it) }
+        if (!checker.valid) return handled(checker)
         val supertypeOverrides = mutableSetOf<String>()
         var supertypeInternal = false
         val resultProperties = requiredProperties.map { it.name to it.typeName } +
@@ -230,6 +260,21 @@ class DslProcessor(
         if (!checker.valid) return handled(checker)
         val resultVisibility =
             if (visibility == KModifier.INTERNAL || supertypeInternal) KModifier.INTERNAL else KModifier.PUBLIC
+
+        val reservedBackingNames = hierarchy.allProperties(spec)
+            .mapTo(mutableSetOf()) { it.declaration.simpleName.asString() }
+        for (property in valueProperties) {
+            property.fieldName = availableName("${property.name}Field", reservedBackingNames)
+            reservedBackingNames += property.fieldName
+        }
+        for (property in listProperties) {
+            property.fieldName = availableName("${property.name}Field", reservedBackingNames)
+            reservedBackingNames += property.fieldName
+        }
+        for (scope in childScopes) {
+            scope.fieldName = availableName("${scope.name}Field", reservedBackingNames)
+            reservedBackingNames += scope.fieldName
+        }
 
         val builderTypeName = ClassName(packageName, names.builderName)
         val resultTypeName = ClassName(packageName, names.resultName)
@@ -687,11 +732,11 @@ class DslProcessor(
         return if (prefix.endsWith("()")) CodeBlock.of("%T()", type) else CodeBlock.of("%T", type)
     }
 
-    private fun ValueProperty.nameField(): String = "${name}Field"
+    private fun ValueProperty.nameField(): String = fieldName
 
-    private fun ListProperty.nameField(): String = "${name}Field"
+    private fun ListProperty.nameField(): String = fieldName
 
-    private fun ChildScope.nameField(): String = "${name}Field"
+    private fun ChildScope.nameField(): String = fieldName
 
     /**
      * Resolves a fully qualified name into a [ClassName]; nested classes
@@ -930,6 +975,10 @@ class DslProcessor(
             checker.reportUnresolved(function, "The last parameter of @DslChild function $name is not resolvable yet.")
             return null
         }
+        if (declaredBlockType.isMarkedNullable) {
+            checker.report(function, "The block parameter of @DslChild function $name must not be nullable.")
+            return null
+        }
         // The block type of a child scope inherited from a generic base
         // carries the base's type parameters; substituting them resolves the
         // receiver from the perspective of the analyzed interface. The shape
@@ -1135,6 +1184,16 @@ class DslProcessor(
                 if (member.isAbstract) members[signature] = SubstitutedMember(member, environment)
             }
             return members.values.toList()
+        }
+
+        /**
+         * Collects declared function names across the hierarchy for
+         * extension-collision checks.
+         */
+        fun functionNames(declaration: KSClassDeclaration): Set<String> = buildSet {
+            walk(declaration, emptyMap()) { member, _ ->
+                if (member is KSFunctionDeclaration) add(member.simpleName.asString())
+            }
         }
 
         /**
@@ -1496,16 +1555,41 @@ class DslProcessor(
                 report(property, "The $role of property $propertyName has no qualified name.")
                 return null
             }
+            var containingDeclaration: KSDeclaration? = declaration
+            while (containingDeclaration != null) {
+                if (
+                    Modifier.PRIVATE in containingDeclaration.modifiers ||
+                    Modifier.PROTECTED in containingDeclaration.modifiers
+                ) {
+                    report(property, "The $role of property $propertyName is not visible from generated code.")
+                    return null
+                }
+                containingDeclaration = containingDeclaration.parentDeclaration
+            }
             return when {
                 declaration.isCompanionObject || declaration.classKind == ClassKind.OBJECT -> prefix
-                declaration.classKind == ClassKind.CLASS ->
-                    if (declaration.primaryConstructor?.parameters?.isEmpty() == true) "$prefix()" else {
+                declaration.classKind == ClassKind.CLASS -> {
+                    if (
+                        Modifier.ABSTRACT in declaration.modifiers ||
+                        Modifier.SEALED in declaration.modifiers ||
+                        Modifier.INNER in declaration.modifiers
+                    ) {
+                        report(property, "The $role of property $propertyName must be a concrete, non-inner class.")
+                        return null
+                    }
+                    val constructor = declaration.primaryConstructor
+                    val callable = constructor != null &&
+                            constructor.parameters.all { it.hasDefault || it.isVararg } &&
+                            Modifier.PRIVATE !in constructor.modifiers &&
+                            Modifier.PROTECTED !in constructor.modifiers
+                    if (callable) "$prefix()" else {
                         report(
                             property,
-                            "The $role of property $propertyName is a class without a no-argument constructor."
+                            "The $role of property $propertyName is a class without an accessible constructor callable with no arguments."
                         )
                         null
                     }
+                }
 
                 else -> {
                     report(property, "The $role of property $propertyName must be a class or object.")
@@ -1666,7 +1750,9 @@ class DslProcessor(
         val validator: String?,
         val validatorAcceptsNull: Boolean,
         val message: String,
-    )
+    ) {
+        var fieldName: String = "${name}Field"
+    }
 
     private class ListProperty(
         val name: String,
@@ -1675,7 +1761,9 @@ class DslProcessor(
         val validator: String?,
         val message: String,
         val children: List<ChildSpec>,
-    )
+    ) {
+        var fieldName: String = "${name}Field"
+    }
 
     /**
      * A DslBuilder interface used as a child: its generated builder, result
@@ -1697,7 +1785,9 @@ class DslProcessor(
         val parameters: List<Parameter>,
         val blockName: String,
         val child: ChildSpec,
-    )
+    ) {
+        var fieldName: String = "${name}Field"
+    }
 
     private fun decapitalize(name: String): String =
         if (name.length >= 2 && name[1].isUpperCase()) name else name.replaceFirstChar { it.lowercase() }

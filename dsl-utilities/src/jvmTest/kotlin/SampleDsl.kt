@@ -380,3 +380,45 @@ interface PublicInternalChildListDsl {
     @DslList(children = [InternalListChildDsl::class])
     var items: MutableList<Any>
 }
+
+@DslBuilder
+interface BackingNamesDsl {
+    @DslValue(initial = "name")
+    var name: String
+
+    @DslValue(initial = "field")
+    var nameField: String
+
+    @DslList
+    var items: MutableList<String>
+
+    @DslValue(initial = "items")
+    var itemsField: String
+
+    @DslValue(initial = "child")
+    var childField: String
+
+    @DslChild
+    fun child(block: TransientEventDsl.() -> Unit = {})
+}
+
+class DefaultArgumentValidator(private val expected: String = "valid") : DslValidator<String> {
+    override fun validate(value: String): Boolean = value == expected
+}
+
+@DslBuilder
+interface ConstructorValidatorDsl {
+    @DslValue(initial = "valid", validator = DefaultArgumentValidator::class)
+    var value: String
+}
+
+interface ConcreteBackingName {
+    val nameField: String
+        get() = "default"
+}
+
+@DslBuilder
+interface ConcreteBackingDsl : ConcreteBackingName {
+    @DslValue(initial = "name")
+    var name: String
+}
