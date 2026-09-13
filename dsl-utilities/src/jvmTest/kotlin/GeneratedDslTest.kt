@@ -84,6 +84,45 @@ class SampleDslTest {
     }
 
     @Test
+    fun `inherited members join the generated builder`() {
+        val builder = InheritingDslBuilder(extra = 3)
+        assertEquals(7, builder.defaulted)
+
+        val inheriting = builder.apply {
+            base = "changed"
+            listStored = "item"
+        }.build()
+
+        assertEquals(3, inheriting.extra)
+        assertEquals("changed", inheriting.base)
+        assertEquals("item", inheriting.listStored)
+    }
+
+    @Test
+    fun `inherited generic members take the type arguments`() {
+        val generic = buildGenericInheriting(value = 5) {
+            label = "labeled"
+        }
+
+        assertEquals(5, generic.value)
+        assertEquals("labeled", generic.label)
+    }
+
+    @Test
+    fun `nested specifications are referenced by qualified name`() {
+        val nested = buildNested { }
+
+        assertEquals("nested", nested.nested)
+    }
+
+    @Test
+    fun `internal specifications generate internal declarations`() {
+        val internal = buildInternal()
+
+        assertEquals("hidden", internal.hidden)
+    }
+
+    @Test
     fun `null default is validated at construction`() {
         assertFailsWith<IllegalArgumentException> { buildInvalidNullable() }
     }

@@ -46,7 +46,7 @@ object UpperCaseMapper : DslMapper<String, String> {
     override fun toValue(stored: String): String = stored.uppercase()
 }
 
-@DslBuilder
+@DslBuilder(supertype = Named::class)
 interface SampleDsl {
     val name: String
 
@@ -82,6 +82,73 @@ interface SampleDsl {
 
 object NoNullStringValidator : DslValidator<String?> {
     override fun validate(value: String?): Boolean = value != null
+}
+
+// The generated builder copies this annotation verbatim; its parameter is
+// exercised by the copy rather than by a runtime read.
+@Suppress("unused")
+@Target(AnnotationTarget.TYPE)
+@Retention(AnnotationRetention.BINARY)
+annotation class MaxBytes(val atMost: Byte)
+
+interface Named {
+    val name: String
+
+    val title: String
+}
+
+interface BaseDsl {
+    val extra: Int
+
+    @DslValue(initial = "base")
+    var base: String
+
+    val defaulted: Int
+        get() = 7
+}
+
+interface GenericBaseDsl<T> {
+    val value: T
+}
+
+abstract class ListStoredBase<T> : DslMapper<List<T>, T> {
+    override fun toValue(stored: List<T>): T = stored.first()
+}
+
+object NamesToListMapper : ListStoredBase<String>() {
+    override fun toStored(value: String): List<String> = listOf(value)
+}
+
+@DslBuilder
+interface InheritingDsl : BaseDsl {
+    @DslValue(initial = "own")
+    var own: String
+
+    @DslValue(initial = "x", mapper = NamesToListMapper::class)
+    var listStored: String
+
+    @DslValue(initial = "0")
+    var limited: @MaxBytes(2) String
+}
+
+@DslBuilder
+interface GenericInheritingDsl : GenericBaseDsl<Int> {
+    @DslValue
+    var label: String?
+}
+
+class Containers {
+    @DslBuilder
+    interface NestedDsl {
+        @DslValue(initial = "nested")
+        var nested: String
+    }
+}
+
+@DslBuilder
+internal interface InternalDsl {
+    @DslValue(initial = "hidden")
+    var hidden: String
 }
 
 @DslBuilder
