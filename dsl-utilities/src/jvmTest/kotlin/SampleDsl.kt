@@ -1,0 +1,172 @@
+package top.ltfan.dslutilities.test
+
+import top.ltfan.dslutilities.*
+
+object EvenIntValidator : DslValidator<Int> {
+    override fun validate(value: Int): Boolean = value % 2 == 0
+}
+
+object NonBlankValidator : DslValidator<String> {
+    override fun validate(value: String): Boolean = value.isNotBlank()
+}
+
+object PositiveIntValidator : DslValidator<Int> {
+    override fun validate(value: Int): Boolean = value > 0
+}
+
+object SampleEventValidator : DslValidator<SampleEvent> {
+    override fun validate(value: SampleEvent): Boolean = value !is TimedEvent || value.at >= 0
+}
+
+object IntStringMapper : DslMapper<Int, String> {
+    override fun toStored(value: String): Int = value.toInt()
+
+    override fun toValue(stored: Int): String = stored.toString()
+}
+
+object UpperCaseMapper : DslMapper<String, String> {
+    override fun toStored(value: String): String = value.lowercase()
+
+    override fun toValue(stored: String): String = stored.uppercase()
+}
+
+@DslBuilder
+interface SampleDsl {
+    val name: String
+
+    @DslValue(validator = NonBlankValidator::class, message = "The title must not be blank.")
+    val title: String
+
+    @DslValue(initial = "1", mapper = IntStringMapper::class)
+    var intToString: String
+
+    @DslValue(
+        initial = "2",
+        mapper = IntStringMapper::class,
+        validator = EvenIntValidator::class,
+        message = "The value must be an even integer.",
+    )
+    var evenIntToString: String
+
+    @DslValue
+    var nickname: String?
+
+    @DslValue(initial = "default", mapper = UpperCaseMapper::class)
+    var prepared: String
+
+    @DslList(validator = PositiveIntValidator::class, message = "The elements must be positive.")
+    var numbers: MutableList<Int>
+}
+
+@DslBuilder
+interface Config {
+    @DslValue(initial = "8080")
+    var port: Int
+
+    @DslValue
+    var host: String?
+
+    @DslList
+    var tags: MutableList<String>
+}
+
+sealed interface SampleEvent
+
+@DslBuilder(supertype = SampleEvent::class)
+interface TransientEventDsl {
+    @DslValue
+    var intensity: Float?
+
+    @DslValue
+    var sharpness: Float?
+}
+
+@DslBuilder(supertype = SampleEvent::class)
+interface ContinuousEventDsl {
+    @DslValue
+    var duration: Int?
+}
+
+@DslBuilder(supertype = SampleEvent::class)
+interface TimedEventDsl {
+    val at: Int
+
+    @DslValue
+    var label: String?
+}
+
+@DslBuilder
+interface EventsDsl {
+    @DslList(
+        children = [TransientEventDsl::class, ContinuousEventDsl::class, TimedEventDsl::class],
+        validator = SampleEventValidator::class,
+        message = "The timed event positions must be non-negative.",
+    )
+    var events: MutableList<SampleEvent>
+
+    @DslValue
+    var title: String?
+}
+
+@DslBuilder
+interface PatternDsl {
+    @DslChild
+    fun events(block: EventsDsl.() -> Unit = {})
+}
+
+@DslBuilder
+interface HolderDsl {
+    @DslChild
+    fun event(at: Int, block: TimedEventDsl.() -> Unit = {})
+}
+
+@DslBuilder(
+    resultName = "Palette",
+    builderName = "PaletteAssembler",
+    functionName = "palette",
+)
+interface PaletteDsl {
+    @DslValue(initial = "black")
+    var background: String
+}
+
+@DslBuilder(generateFunction = false)
+interface GradientDsl {
+    @DslValue(initial = "0")
+    var from: Int
+
+    @DslValue(initial = "255")
+    var to: Int
+}
+
+object GradientFactory {
+    fun gradient(block: GradientDsl.() -> Unit): Gradient {
+        val builder = GradientDslBuilder()
+        builder.block()
+        return builder.build()
+    }
+}
+
+@Target(AnnotationTarget.TYPE)
+annotation class TypeMark
+
+@DslBuilder
+interface LambdaDsl {
+    @DslValue
+    var plain: (() -> Unit)?
+
+    @DslValue
+    var withReceiver: (String.() -> Unit)?
+
+    @DslValue
+    var withParameters: ((x: Int, y: String) -> Boolean)?
+
+    @DslValue
+    var marked: (@TypeMark () -> Unit)?
+
+    @DslValue
+    var markedWithReceiver: (@TypeMark String.() -> Unit)?
+
+    @DslValue
+    var suspending: (suspend () -> Unit)?
+}

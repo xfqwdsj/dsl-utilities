@@ -1,0 +1,268 @@
+package top.ltfan.dslutilities.test
+
+import kotlin.test.*
+
+class SampleDslTest {
+    @Test
+    fun `initial values are applied`() {
+        val sample = buildSample(name = "required", title = "title")
+
+        assertEquals("1", sample.intToString)
+        assertEquals("2", sample.evenIntToString)
+        assertNull(sample.nickname)
+        assertEquals("DEFAULT", sample.prepared)
+        assertEquals(emptyList(), sample.numbers)
+    }
+
+    @Test
+    fun `legal settings are stored`() {
+        val sample = buildSample(name = "required", title = "title") {
+            intToString = "10"
+            evenIntToString = "4"
+            nickname = "nick"
+            prepared = "Prepared"
+            numbers.add(2)
+            numbers.add(4)
+        }
+
+        assertEquals("10", sample.intToString)
+        assertEquals("4", sample.evenIntToString)
+        assertEquals("nick", sample.nickname)
+        assertEquals("PREPARED", sample.prepared)
+        assertEquals(listOf(2, 4), sample.numbers)
+    }
+
+    @Test
+    fun `optional values accept null after being set`() {
+        val sample = buildSample(name = "required", title = "title") {
+            nickname = "nick"
+            assertEquals("nick", nickname)
+            nickname = null
+            assertNull(nickname)
+        }
+
+        assertNull(sample.nickname)
+    }
+
+    @Test
+    fun `mapper transforms values on get and set`() {
+        val sample = buildSample(name = "required", title = "title") {
+            assertEquals("DEFAULT", prepared)
+            prepared = "Prepared"
+            assertEquals("PREPARED", prepared)
+        }
+
+        assertEquals("PREPARED", sample.prepared)
+    }
+
+    @Test
+    fun `setter validation rejects illegal values`() {
+        buildSample(name = "required", title = "title") {
+            assertFailsWith<IllegalArgumentException> { evenIntToString = "3" }
+        }
+    }
+
+    @Test
+    fun `build validation rejects illegal required values`() {
+        assertFailsWith<IllegalArgumentException> { buildSample(name = "required", title = " ") }
+    }
+
+    @Test
+    fun `build validation rejects illegal list elements`() {
+        assertFailsWith<IllegalArgumentException> {
+            buildSample(name = "required", title = "title") {
+                numbers.add(2)
+                numbers.add(-1)
+            }
+        }
+    }
+
+    @Test
+    fun `result values are locked against modification`() {
+        val builder = SampleDslBuilder(name = "required", title = "title")
+        builder.numbers.add(2)
+        val sample = builder.build()
+        builder.numbers.add(4)
+
+        assertEquals(listOf(2), sample.numbers)
+        assertFailsWith<UnsupportedOperationException> { (sample.numbers as MutableList<Int>).add(6) }
+    }
+
+    @Test
+    fun `result equality follows data class semantics`() {
+        val first = buildSample(name = "required", title = "title") { numbers.add(2) }
+        val second = buildSample(name = "required", title = "title") { numbers.add(2) }
+
+        assertEquals(first, second)
+    }
+}
+
+class ConfigDslTest {
+    @Test
+    fun `initial values are applied and lists are empty`() {
+        val config = buildConfig()
+
+        assertEquals(8080, config.port)
+        assertNull(config.host)
+        assertEquals(emptyList(), config.tags)
+    }
+
+    @Test
+    fun `settings are stored`() {
+        val config = buildConfig {
+            port = 443
+            host = "localhost"
+            tags.add("kotlin")
+            tags = mutableListOf("dsl")
+        }
+
+        assertEquals(443, config.port)
+        assertEquals("localhost", config.host)
+        assertEquals(listOf("dsl"), config.tags)
+    }
+
+    @Test
+    fun `builder starts from initial values`() {
+        val builder = ConfigBuilder()
+        assertEquals(8080, builder.port)
+        builder.port = 443
+
+        assertEquals(443, builder.build().port)
+    }
+}
+
+class CompositionDslTest {
+    @Test
+    fun `child scopes and element functions compose nested values`() {
+        val pattern = buildPattern {
+            events {
+                transientEvent {
+                    intensity = 0.8f
+                    sharpness = 1f
+                }
+                transientEvent
+                continuousEvent { duration = 100 }
+                timedEvent(at = 20) { label = "low" }
+                continuousEvent
+                title = "pattern"
+            }
+        }
+
+        val events = pattern.events.events
+        assertEquals(5, events.size)
+        val transient = events[0] as TransientEvent
+        assertEquals(0.8f, transient.intensity)
+        assertEquals(1f, transient.sharpness)
+        assertTrue(events[1] is TransientEvent)
+        assertEquals(100, (events[2] as ContinuousEvent).duration)
+        val timed = events[3] as TimedEvent
+        assertEquals(20, timed.at)
+        assertEquals("low", timed.label)
+        assertEquals("pattern", pattern.events.title)
+    }
+
+    @Test
+    fun `repeated child scope invocations replace the stored child`() {
+        val pattern = buildPattern {
+            events { }
+            events {
+                transientEvent { intensity = 0.5f }
+            }
+        }
+
+        assertEquals(1, pattern.events.events.size)
+    }
+
+    @Test
+    fun `child scope is required for the built result`() {
+        assertFailsWith<IllegalArgumentException> { buildPattern() }
+    }
+
+    @Test
+    fun `list validation applies to generated elements`() {
+        assertFailsWith<IllegalArgumentException> {
+            buildPattern {
+                events {
+                    timedEvent(at = -1)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `parameterized child scope passes required values to the child`() {
+        val holder = buildHolder {
+            event(at = 30) { label = "child" }
+        }
+
+        assertEquals(30, holder.event.at)
+        assertEquals("child", holder.event.label)
+    }
+
+    @Test
+    fun `generated build and element functions are inline`() {
+        fun buildOrNull(): Events? {
+            buildEvents {
+                transientEvent { return null }
+            }
+            return null
+        }
+
+        assertNull(buildOrNull())
+    }
+
+    @Test
+    fun `custom names replace the derived names`() {
+        val palette = palette {
+            background = "white"
+        }
+
+        assertEquals("white", palette.background)
+    }
+
+    @Test
+    fun `generateFunction false leaves the entry point to the library`() {
+        val gradient = GradientFactory.gradient {
+            from = 10
+            to = 20
+        }
+
+        assertEquals(10, gradient.from)
+        assertEquals(20, gradient.to)
+    }
+}
+
+class LambdaDslTest {
+    @Test
+    fun `lambda properties accept the rendered types`() {
+        val dsl = buildLambda {
+            plain = {}
+            withReceiver = { length }
+            withParameters = { x, y -> x > 0 && y.isNotEmpty() }
+            marked = {}
+            markedWithReceiver = { length }
+            suspending = {}
+        }
+
+        assertNotNull(dsl.plain)
+        assertNotNull(dsl.withReceiver)
+        assertNotNull(dsl.withParameters)
+        assertNotNull(dsl.marked)
+        assertNotNull(dsl.markedWithReceiver)
+        assertNotNull(dsl.suspending)
+    }
+
+    @Test
+    fun `generated builder renders function types faithfully`() {
+        val file = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "LambdaDslBuilder.kt" }
+        assertNotNull(file, "LambdaDslBuilder.kt was not generated")
+        val text = file.readText()
+
+        assertTrue(text.contains("@top.ltfan.dslutilities.test.TypeMark"), text)
+        assertTrue(text.contains("kotlin.String.() -> kotlin.Unit"), text)
+        assertTrue(text.contains("x: kotlin.Int"), text)
+        assertTrue(text.contains("suspend () -> kotlin.Unit"), text)
+    }
+}
