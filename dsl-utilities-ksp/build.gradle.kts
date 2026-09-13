@@ -12,6 +12,8 @@ plugins {
 
 dependencies {
     implementation(libs.kspApi)
+    implementation(libs.kotlinpoet)
+    implementation(libs.kotlinpoet.ksp)
     compileOnly(project(":dsl-utilities"))
 }
 

@@ -317,9 +317,9 @@ class LambdaDslTest {
         assertNotNull(file, "LambdaDslBuilder.kt was not generated")
         val text = file.readText()
 
-        assertTrue(text.contains("@top.ltfan.dslutilities.test.TypeMark"), text)
-        assertTrue(text.contains("kotlin.String.() -> kotlin.Unit"), text)
-        assertTrue(text.contains("x: kotlin.Int"), text)
-        assertTrue(text.contains("suspend () -> kotlin.Unit"), text)
+        assertTrue(text.contains("@TypeMark"), text)
+        assertTrue(text.contains("String.() -> Unit"), text)
+        assertTrue(text.contains("x: Int"), text)
+        assertTrue(text.contains("suspend () -> Unit"), text)
     }
 }
