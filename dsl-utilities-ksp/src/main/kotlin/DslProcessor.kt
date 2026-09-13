@@ -157,6 +157,15 @@ class DslProcessor(
                     ?: break
                 val provided = resultPropertyTypes[name]
                 when {
+                    // Result properties are read-only constructor values: a
+                    // mutable supertype member can never be overridden by one,
+                    // and an abstract one cannot be inherited either.
+                    property.isMutable && (provided != null || hierarchy.isAbstract(property)) ->
+                        checker.report(
+                            spec,
+                            "The result supertype ${supertypeDeclaration.simpleName.asString()} declares mutable property $name, which the generated result cannot override."
+                        )
+
                     // A concrete supertype property keeps its default when the
                     // DSL does not provide a member of the same name; an
                     // abstract one has no default and must be provided.
@@ -401,14 +410,12 @@ class DslProcessor(
         }
 
         for (property in childScopes) {
+            val blockType = LambdaTypeName.get(
+                receiver = classNameOf(property.child.specQualifiedName),
+                returnType = UNIT,
+            )
             val parameters = property.parameters.map { ParameterSpec.builder(it.name, it.typeName).build() } +
-                    ParameterSpec.builder(
-                        "block",
-                        LambdaTypeName.get(
-                            receiver = classNameOf(property.child.specQualifiedName),
-                            returnType = UNIT,
-                        ),
-                    ).build()
+                    ParameterSpec.builder("block", blockType).build()
             val arguments = property.child.required.joinToString(", ") { "${it.name} = ${it.name}" }
             builder.addFunction(
                 FunSpec.builder(property.name)
@@ -797,15 +804,53 @@ class DslProcessor(
             return null
         }
         val blockParameter = parameters.last()
-        val blockType = blockParameter.type.resolve()
-        if (blockType.declaration.qualifiedName?.asString() != "kotlin.Function1" || blockType.arguments.size != 2) {
+        val declaredBlockType = blockParameter.type.resolve()
+        if (declaredBlockType.isError) {
+            checker.reportUnresolved(function, "The last parameter of @DslChild function $name is not resolvable yet.")
+            return null
+        }
+        // The block type of a child scope inherited from a generic base
+        // carries the base's type parameters; substituting them resolves the
+        // receiver from the perspective of the analyzed interface. The shape
+        // checks stay on the declared type because substitution does not
+        // carry over the receiver and suspend markers.
+        val isReceiverStyle = declaredBlockType.annotations.any { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }
+        val isSuspend = declaredBlockType.isSuspendFunctionType
+        val blockType = checker.substituteType(declaredBlockType, environment)
+        val arguments = blockType.arguments
+        if ((!declaredBlockType.isFunctionType && !isSuspend) || arguments.size != (if (isReceiverStyle) 2 else 1)) {
             checker.report(
                 function,
-                "The last parameter of @DslChild function $name must be a function type with the child DslBuilder interface as receiver."
+                "The last parameter of @DslChild function $name must be a function type with the child DslBuilder interface as receiver and a Unit return type."
             )
             return null
         }
-        val receiverType = blockType.arguments[0].type?.resolve() ?: run {
+        if (!isReceiverStyle) {
+            checker.report(
+                function,
+                "The last parameter of @DslChild function $name must take the child DslBuilder interface as a receiver."
+            )
+            return null
+        }
+        if (isSuspend || Modifier.SUSPEND in function.modifiers) {
+            // The DSL block that invokes the child scope is never suspend, so
+            // neither a suspend block nor a suspend child scope function can
+            // be called from it.
+            checker.report(
+                function,
+                "@DslChild function $name must not be suspend or take a suspend block."
+            )
+            return null
+        }
+        val blockReturnType = arguments.last().type?.resolve()
+        if (blockReturnType?.declaration?.qualifiedName?.asString() != "kotlin.Unit") {
+            checker.report(
+                function,
+                "The last parameter of @DslChild function $name must return Unit."
+            )
+            return null
+        }
+        val receiverType = arguments[0].type?.resolve() ?: run {
             checker.report(
                 function,
                 "The last parameter of @DslChild function $name must be a function type with the child DslBuilder interface as receiver."
@@ -1260,7 +1305,10 @@ class DslProcessor(
             }
             val storedType = dslMapperArguments[0]!!
             val valueType = dslMapperArguments[1]!!
-            if (!valueType.isAssignableFrom(propertyType)) {
+            // The value type feeds both directions of the mapping: the setter
+            // passes property values into `toStored`, and the getter assigns
+            // the result of `toValue` back to the property type.
+            if (!valueType.isAssignableFrom(propertyType) || !propertyType.isAssignableFrom(valueType)) {
                 report(
                     property,
                     "The mapper of property $propertyName maps a type that does not accept ${

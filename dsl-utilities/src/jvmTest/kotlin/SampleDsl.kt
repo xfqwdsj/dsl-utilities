@@ -295,3 +295,11 @@ internal interface ShorthandDsl {
     @DslList(children = [TransientEventDsl::class])
     var items: MutableList<SampleEvent>
 }
+
+interface GenericChildBase<T> {
+    @DslChild
+    fun child(block: T.() -> Unit)
+}
+
+@DslBuilder
+interface GenericChildScopeDsl : GenericChildBase<TransientEventDsl>

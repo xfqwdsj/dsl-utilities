@@ -346,4 +346,13 @@ class LambdaDslTest {
 
         assertEquals(2, shorthand.items.size)
     }
+
+    @Test
+    fun `child scopes inherited from generic bases bind their receiver`() {
+        val generic = buildGenericChildScope {
+            child { intensity = 0.5f }
+        }
+
+        assertEquals(0.5f, generic.child.intensity)
+    }
 }
