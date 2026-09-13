@@ -331,3 +331,52 @@ interface SeparateListsDsl {
     @DslList(children = [ContinuousEventDsl::class])
     var continuousEvents: MutableList<SampleEvent>
 }
+
+@DslBuilder
+interface ReservedNamesDsl {
+    val `when`: String
+
+    val block: String
+
+    val builder: String
+}
+
+interface CovariantName {
+    val name: CharSequence
+}
+
+@DslBuilder(supertype = CovariantName::class)
+interface CovariantResultDsl {
+    val name: String
+}
+
+interface BlockItem
+
+@DslBuilder(supertype = BlockItem::class)
+interface BlockChildDsl {
+    val block: String
+}
+
+@DslBuilder
+interface BlockListDsl {
+    @DslList(children = [BlockChildDsl::class])
+    var items: MutableList<BlockItem>
+}
+
+@DslBuilder
+interface BlockScopeHolderDsl {
+    @DslChild
+    fun child(block: String, configure: BlockChildDsl.() -> Unit = {})
+}
+
+@DslBuilder
+internal interface InternalListChildDsl {
+    @DslValue(initial = "internal")
+    var value: String
+}
+
+@DslBuilder
+interface PublicInternalChildListDsl {
+    @DslList(children = [InternalListChildDsl::class])
+    var items: MutableList<Any>
+}

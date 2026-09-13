@@ -384,3 +384,43 @@ class HierarchyRegressionTest {
         assertEquals(1, lists.continuousEvents.size)
     }
 }
+
+class GenerationEdgeCaseTest {
+    @Test
+    fun `escaped and reserved required names generate valid entry points`() {
+        val result = buildReservedNames(`when` = "now", block = "body", builder = "factory")
+
+        assertEquals("now", result.`when`)
+        assertEquals("body", result.block)
+        assertEquals("factory", result.builder)
+    }
+
+    @Test
+    fun `read-only result properties override covariantly`() {
+        val result = buildCovariantResult(name = "name")
+
+        assertEquals("name", result.name)
+    }
+
+    @Test
+    fun `required block names do not collide with configuration lambdas`() {
+        val list = buildBlockList {
+            blockChild(block = "list")
+        }
+        val scope = buildBlockScopeHolder {
+            child(block = "scope")
+        }
+
+        assertEquals("list", list.items.single().let { it as BlockChild }.block)
+        assertEquals("scope", scope.child.block)
+    }
+
+    @Test
+    fun `public lists can use internal child helpers internally`() {
+        val result = buildPublicInternalChildList {
+            internalListChild
+        }
+
+        assertEquals("internal", (result.items.single() as InternalListChild).value)
+    }
+}

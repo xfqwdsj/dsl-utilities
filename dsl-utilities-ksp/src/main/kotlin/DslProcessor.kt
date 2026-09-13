@@ -163,6 +163,12 @@ class DslProcessor(
                 valueProperties.map { it.name to it.typeName } +
                 listProperties.map { it.name to LIST.parameterizedBy(it.elementTypeName) } +
                 childScopes.map { it.name to classNameOf(it.child.resultQualifiedName) }
+        val resolvedResultPropertyTypes = buildMap {
+            for (property in requiredProperties) put(property.name, property.type)
+            for (property in valueProperties) put(property.name, property.type)
+            for (property in listProperties) put(property.name, checker.immutableListType(property.elementType))
+            for (property in childScopes) put(property.name, property.child.resultSupertype)
+        }
         if (supertypeDeclaration != null && supertypeTypeName != null) {
             supertypeInternal = effectiveVisibility(supertypeDeclaration, checker) == KModifier.INTERNAL
             val resultPropertyTypes = resultProperties.toMap()
@@ -175,12 +181,13 @@ class DslProcessor(
             for (member in hierarchy.allProperties(supertypeDeclaration, environment)) {
                 val property = member.declaration
                 val name = property.simpleName.asString()
-                val rendered = checker.renderTypeName(
-                    property,
-                    checker.substituteType(property.type.resolve(), member.environment)
-                )
-                    ?: break
+                val expectedType = checker.substituteType(property.type.resolve(), member.environment)
+                val rendered = checker.renderTypeName(property, expectedType) ?: break
                 val provided = resultPropertyTypes[name]
+                val resolvedProvided = resolvedResultPropertyTypes[name]
+                val compatible = provided == rendered ||
+                        resolvedProvided?.let(expectedType::isAssignableFrom) == true ||
+                        expectedType.makeNotNullable().declaration.qualifiedName?.asString() == "kotlin.Any"
                 when {
                     // Result properties are read-only constructor values: a
                     // mutable supertype member can never be overridden by one,
@@ -202,7 +209,7 @@ class DslProcessor(
 
                     provided == null -> Unit
 
-                    provided != rendered ->
+                    !compatible ->
                         checker.report(
                             spec,
                             "Property $name of the result supertype has type $rendered, but the DslBuilder interface provides $provided."
@@ -239,7 +246,7 @@ class DslProcessor(
         )
         val resultType =
             resultType(resultTypeName, resultVisibility, resultProperties, supertypeTypeName, supertypeOverrides)
-        val elementFunctions = elementFunctions(specQualifiedName, listOf(visibility), listProperties)
+        val elementFunctions = elementFunctions(specQualifiedName, visibility, listProperties)
         val buildFunction = if (names.generateFunction) {
             buildFunction(
                 names,
@@ -440,17 +447,18 @@ class DslProcessor(
                 returnType = UNIT,
             )
             val parameters = property.parameters.map { ParameterSpec.builder(it.name, it.typeName).build() } +
-                    ParameterSpec.builder("block", blockType).build()
-            val arguments = property.child.required.joinToString(", ") { "${it.name} = ${it.name}" }
+                    ParameterSpec.builder(property.blockName, blockType).build()
+            val arguments = requiredArguments(property.child.required)
             builder.addFunction(
                 FunSpec.builder(property.name)
                     .addModifiers(KModifier.OVERRIDE)
                     .addParameters(parameters)
                     .addStatement(
-                        "%N = %T(%L).apply(block).build()",
+                        "%N = %T(%L).apply(%N).build()",
                         property.nameField(),
                         classNameOf(property.child.builderQualifiedName),
                         arguments,
+                        property.blockName,
                     )
                     .build()
             )
@@ -478,20 +486,31 @@ class DslProcessor(
                 buildCode.addStatement("}")
             }
         }
-        val argumentParts = mutableListOf<String>()
-        for (property in requiredProperties) argumentParts += "${property.name} = ${property.name}"
-        for (property in valueProperties) argumentParts += "${property.name} = ${property.name}"
-        for (property in listProperties) argumentParts += "${property.name} = ${property.nameField()}.toList()"
-        for (property in childScopes) {
-            argumentParts += "${property.name} = requireNotNull(${property.nameField()}) { \"Property ${property.name} is required.\" }"
+        val arguments = CodeBlock.builder()
+        var hasArguments = false
+        fun addArgument(name: String, format: String, vararg values: Any) {
+            if (hasArguments) arguments.add(", ")
+            arguments.add("%N = ", name)
+            arguments.add(format, *values)
+            hasArguments = true
         }
-        val arguments = argumentParts.joinToString(", ")
+        for (property in requiredProperties) addArgument(property.name, "%N", property.name)
+        for (property in valueProperties) addArgument(property.name, "%N", property.name)
+        for (property in listProperties) addArgument(property.name, "%N.toList()", property.nameField())
+        for (property in childScopes) {
+            addArgument(
+                property.name,
+                "requireNotNull(%N) { %S }",
+                property.nameField(),
+                "Property ${property.name} is required.",
+            )
+        }
         builder.addFunction(
             FunSpec.builder("build")
                 .addModifiers(memberVisibility)
                 .returns(resultTypeName)
                 .addCode(buildCode.build())
-                .addStatement("return %T(%L)", resultTypeName, arguments)
+                .addStatement("return %T(%L)", resultTypeName, arguments.build())
                 .build()
         )
         return builder.build()
@@ -542,23 +561,30 @@ class DslProcessor(
      */
     private fun elementFunctions(
         specQualifiedName: String,
-        visibility: List<KModifier>,
+        parentVisibility: KModifier,
         listProperties: List<ListProperty>,
     ): ElementFunctions {
         val functions = mutableListOf<FunSpec>()
         val shorthands = mutableListOf<PropertySpec>()
         for (property in listProperties) {
             for (child in property.children) {
-                val arguments = child.required.joinToString(", ") { "${it.name} = ${it.name}" }
+                val blockName = availableName("block", child.required.map { it.name })
+                val arguments = requiredArguments(child.required)
+                val visibility =
+                    if (parentVisibility == KModifier.INTERNAL || child.visibility == KModifier.INTERNAL) {
+                        KModifier.INTERNAL
+                    } else {
+                        KModifier.PUBLIC
+                    }
                 functions += FunSpec.builder(child.functionName)
-                    .addModifiers(visibility + KModifier.INLINE)
+                    .addModifiers(visibility, KModifier.INLINE)
                     .receiver(classNameOf(specQualifiedName))
                     .apply {
                         for (required in child.required) addParameter(required.name, required.typeName)
                     }
                     .addParameter(
                         ParameterSpec.builder(
-                            "block",
+                            blockName,
                             LambdaTypeName.get(
                                 receiver = classNameOf(child.specQualifiedName),
                                 returnType = UNIT,
@@ -568,10 +594,11 @@ class DslProcessor(
                             .build()
                     )
                     .addStatement(
-                        "%N.add(%T(%L).apply(block).build())",
+                        "%N.add(%T(%L).apply(%N).build())",
                         property.name,
                         classNameOf(child.builderQualifiedName),
                         arguments,
+                        blockName,
                     )
                     .build()
                 if (child.required.isEmpty()) {
@@ -603,7 +630,10 @@ class DslProcessor(
         resultTypeName: ClassName,
         requiredProperties: List<RequiredProperty>,
     ): FunSpec {
-        val arguments = requiredProperties.joinToString(", ") { "${it.name} = ${it.name}" }
+        val requiredNames = requiredProperties.map { it.name }
+        val blockName = availableName("block", requiredNames)
+        val builderName = availableName("builder", requiredNames + blockName)
+        val arguments = requiredArguments(requiredProperties)
         return FunSpec.builder(names.functionName)
             .addModifiers(visibility, KModifier.INLINE)
             .apply {
@@ -613,17 +643,42 @@ class DslProcessor(
             }
             .addParameter(
                 ParameterSpec.builder(
-                    "block",
+                    blockName,
                     LambdaTypeName.get(receiver = classNameOf(specQualifiedName), returnType = UNIT),
                 )
                     .defaultValue("{}")
                     .build()
             )
             .returns(resultTypeName)
-            .addStatement("val builder = %T(%L)", builderTypeName, arguments)
-            .addStatement("builder.block()")
-            .addStatement("return builder.build()")
+            .addStatement("val %N = %T(%L)", builderName, builderTypeName, arguments)
+            .addStatement("%N.%N()", builderName, blockName)
+            .addStatement("return %N.build()", builderName)
             .build()
+    }
+
+    /**
+     * Builds escaped `name = name` constructor arguments for required
+     * properties.
+     */
+    private fun requiredArguments(properties: List<RequiredProperty>): CodeBlock =
+        CodeBlock.builder()
+            .apply {
+                for ((index, property) in properties.withIndex()) {
+                    if (index > 0) add(", ")
+                    add("%N = %N", property.name, property.name)
+                }
+            }
+            .build()
+
+    /**
+     * Returns [preferred] unless it is reserved, otherwise adds the first free
+     * numeric suffix.
+     */
+    private fun availableName(preferred: String, reserved: Collection<String>): String {
+        if (preferred !in reserved) return preferred
+        var suffix = 2
+        while ("$preferred$suffix" in reserved) suffix++
+        return "$preferred$suffix"
     }
 
     /** The receiver expression that invokes an object or a no-argument class. */
@@ -677,7 +732,7 @@ class DslProcessor(
         }
         val validator = checker.validator(property, name, annotation?.type("validator"), type)
         if (!checker.valid) return null
-        return RequiredProperty(name, typeName, validator?.prefix, checker.message(annotation, name))
+        return RequiredProperty(name, typeName, type, validator?.prefix, checker.message(annotation, name))
     }
 
     /**
@@ -739,6 +794,7 @@ class DslProcessor(
         return ValueProperty(
             name = name,
             typeName = typeName,
+            type = type,
             storageTypeName = mapper?.storageTypeName ?: typeName,
             initialExpression = initialExpression,
             mapper = mapper?.prefix,
@@ -813,7 +869,14 @@ class DslProcessor(
             checker.report(property, "Two or more children of @DslList property $name produce the same function name.")
             return null
         }
-        return ListProperty(name, elementTypeName, validatorPrefix, checker.message(annotation, name), children)
+        return ListProperty(
+            name,
+            elementTypeName,
+            elementType,
+            validatorPrefix,
+            checker.message(annotation, name),
+            children,
+        )
     }
 
     /**
@@ -840,6 +903,15 @@ class DslProcessor(
             checker.report(function, "@DslChild function $name must not declare type parameters.")
             return null
         }
+        val functionReturnType = function.returnType?.resolve()
+        if (functionReturnType?.isError == true) {
+            checker.reportUnresolved(function, "The return type of @DslChild function $name is not resolvable yet.")
+            return null
+        }
+        if (functionReturnType?.declaration?.qualifiedName?.asString() != "kotlin.Unit") {
+            checker.report(function, "@DslChild function $name must return Unit.")
+            return null
+        }
         val parameters = function.parameters
         if (parameters.isEmpty()) {
             checker.report(
@@ -849,6 +921,10 @@ class DslProcessor(
             return null
         }
         val blockParameter = parameters.last()
+        val blockName = blockParameter.name?.asString() ?: run {
+            checker.report(function, "The block parameter of @DslChild function $name has no name.")
+            return null
+        }
         val declaredBlockType = blockParameter.type.resolve()
         if (declaredBlockType.isError) {
             checker.reportUnresolved(function, "The last parameter of @DslChild function $name is not resolvable yet.")
@@ -933,7 +1009,7 @@ class DslProcessor(
             }
             scopeParameters += Parameter(parameterName, parameterTypeName)
         }
-        return ChildScope(name, scopeParameters, child)
+        return ChildScope(name, scopeParameters, blockName, child)
     }
 
     /**
@@ -963,6 +1039,7 @@ class DslProcessor(
         val names = Names.of(specName, annotation)
         val packageName = declaration.packageName.asString()
         fun qualify(name: String): String = if (packageName.isEmpty()) name else "$packageName.$name"
+        val visibility = effectiveVisibility(declaration, checker) ?: return null
         val resultSupertype = annotation.type("supertype")
             ?.takeIf { it.declaration.qualifiedName?.asString() != "kotlin.Unit" }
         if (resultSupertype?.isError == true) {
@@ -973,16 +1050,16 @@ class DslProcessor(
         for (member in Hierarchy(checker).abstractProperties(declaration)) {
             val property = member.declaration
             if (property.isMutable) continue
-            val typeName =
-                checker.renderTypeName(property, checker.substituteType(property.type.resolve(), member.environment))
-                    ?: return null
-            required += RequiredProperty(property.simpleName.asString(), typeName, null, "")
+            val type = checker.substituteType(property.type.resolve(), member.environment)
+            val typeName = checker.renderTypeName(property, type) ?: return null
+            required += RequiredProperty(property.simpleName.asString(), typeName, type, null, "")
         }
         return ChildSpec(
             functionName = decapitalize(specName.removeSuffix("Dsl").takeIf { it.isNotEmpty() } ?: specName),
             builderQualifiedName = qualify(names.builderName),
             resultQualifiedName = qualify(names.resultName),
             resultSupertype = resultSupertype,
+            visibility = visibility,
             specQualifiedName = specQualifiedName,
             required = required,
         )
@@ -1194,6 +1271,18 @@ class DslProcessor(
                 resolver.getTypeArgument(resolver.createKSTypeReferenceFromKSType(substituted), argument.variance)
             }
             return type.replace(arguments)
+        }
+
+        /** Returns the immutable list type generated for a list result property. */
+        fun immutableListType(elementType: KSType): KSType? {
+            val declaration = resolver.getClassDeclarationByName(
+                resolver.getKSNameFromString("kotlin.collections.List")
+            ) ?: return null
+            val argument = resolver.getTypeArgument(
+                resolver.createKSTypeReferenceFromKSType(elementType),
+                Variance.INVARIANT,
+            )
+            return declaration.asType(listOf(argument))
         }
 
         /**
@@ -1557,6 +1646,7 @@ class DslProcessor(
     private class RequiredProperty(
         val name: String,
         val typeName: TypeName,
+        val type: KSType,
         val validator: String?,
         val message: String,
     )
@@ -1569,6 +1659,7 @@ class DslProcessor(
     private class ValueProperty(
         val name: String,
         val typeName: TypeName,
+        val type: KSType,
         val storageTypeName: TypeName,
         val initialExpression: String,
         val mapper: String?,
@@ -1580,6 +1671,7 @@ class DslProcessor(
     private class ListProperty(
         val name: String,
         val elementTypeName: TypeName,
+        val elementType: KSType,
         val validator: String?,
         val message: String,
         val children: List<ChildSpec>,
@@ -1595,6 +1687,7 @@ class DslProcessor(
         val builderQualifiedName: String,
         val resultQualifiedName: String,
         val resultSupertype: KSType?,
+        val visibility: KModifier,
         val specQualifiedName: String,
         val required: List<RequiredProperty>,
     )
@@ -1602,6 +1695,7 @@ class DslProcessor(
     private class ChildScope(
         val name: String,
         val parameters: List<Parameter>,
+        val blockName: String,
         val child: ChildSpec,
     )
 
