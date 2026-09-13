@@ -146,12 +146,26 @@ class DslProcessor(
                 appendLine()
             }
 
+            for (property in valueProperties) {
+                if (property.validator != null && property.initialExpression != "null") {
+                    appendLine("    init {")
+                    appendLine(
+                        "        require(${property.validator}.validate(${property.name}Field)) { \"${
+                            escapeStringLiteral(property.message)
+                        }\" }"
+                    )
+                    appendLine("    }")
+                    appendLine()
+                }
+            }
+
             for (property in listProperties) {
                 appendLine("    override var ${property.name}: MutableList<${property.elementTypeName}>")
                 appendLine("        get() = ${property.name}Field")
                 appendLine("        set(value) {")
+                appendLine("            val snapshot = value.toList()")
                 appendLine("            ${property.name}Field.clear()")
-                appendLine("            ${property.name}Field.addAll(value)")
+                appendLine("            ${property.name}Field.addAll(snapshot)")
                 appendLine("        }")
                 appendLine()
             }
