@@ -864,15 +864,15 @@ class DslProcessor(
                 report(property, "The mapper of property $propertyName must implement DslMapper.")
                 return null
             }
-            if (typeArguments.size != 2 || typeArguments.any { it == null }) {
+            if (dslMapperArguments.size != 2 || dslMapperArguments.any { it == null }) {
                 report(
                     property,
                     "The mapper of property $propertyName must implement DslMapper with two type arguments."
                 )
                 return null
             }
-            val storedType = typeArguments[0]!!
-            val valueType = typeArguments[1]!!
+            val storedType = dslMapperArguments[0]!!
+            val valueType = dslMapperArguments[1]!!
             if (!valueType.isAssignableFrom(propertyType)) {
                 report(
                     property,
