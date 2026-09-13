@@ -303,3 +303,31 @@ interface GenericChildBase<T> {
 
 @DslBuilder
 interface GenericChildScopeDsl : GenericChildBase<TransientEventDsl>
+
+interface NullableGenericBase<T> {
+    val nullableValue: T?
+}
+
+@DslBuilder
+interface NullableGenericDsl : NullableGenericBase<String>
+
+interface AbstractDefaultRoot {
+    val inheritedLabel: String
+}
+
+interface ConcreteDefault : AbstractDefaultRoot {
+    override val inheritedLabel: String
+        get() = "inherited"
+}
+
+@DslBuilder
+interface ConcreteShadowDsl : ConcreteDefault
+
+@DslBuilder
+interface SeparateListsDsl {
+    @DslList(children = [TransientEventDsl::class])
+    var transientEvents: MutableList<SampleEvent>
+
+    @DslList(children = [ContinuousEventDsl::class])
+    var continuousEvents: MutableList<SampleEvent>
+}
