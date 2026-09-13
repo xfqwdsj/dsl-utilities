@@ -32,6 +32,14 @@ object GenericBaseMapper : BaseIntStringMapper() {
     override fun toStored(value: String): Int = value.toInt()
 }
 
+abstract class ReorderedBase<A, B> : DslMapper<B, A>
+
+object ReorderedMapper : ReorderedBase<String, Int>() {
+    override fun toStored(value: String): Int = value.toInt()
+
+    override fun toValue(stored: Int): String = stored.toString()
+}
+
 object UpperCaseMapper : DslMapper<String, String> {
     override fun toStored(value: String): String = value.lowercase()
 
@@ -51,6 +59,9 @@ interface SampleDsl {
     @DslValue(initial = "2", mapper = GenericBaseMapper::class)
     var genericBaseToString: String
 
+    @DslValue(initial = "3", mapper = ReorderedMapper::class)
+    var reorderedToString: String
+
     @DslValue(
         initial = "2",
         mapper = IntStringMapper::class,
@@ -67,6 +78,22 @@ interface SampleDsl {
 
     @DslList(validator = PositiveIntValidator::class, message = "The elements must be positive.")
     var numbers: MutableList<Int>
+}
+
+object NoNullStringValidator : DslValidator<String?> {
+    override fun validate(value: String?): Boolean = value != null
+}
+
+@DslBuilder
+interface InvalidNullableDsl {
+    @DslValue(validator = NoNullStringValidator::class)
+    var nickname: String?
+}
+
+@DslBuilder
+interface NullableDsl {
+    @DslValue(initial = "fan", validator = NoNullStringValidator::class)
+    var nickname: String?
 }
 
 @DslBuilder

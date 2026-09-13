@@ -158,7 +158,8 @@ class DslProcessor(
             }
 
             for (property in valueProperties) {
-                if (property.validator != null && property.initialExpression != "null") {
+                val validateDefault = property.initialExpression != "null" || property.validatorAcceptsNull
+                if (property.validator != null && validateDefault) {
                     appendLine("    init {")
                     appendLine(
                         "        require(${property.validator}.validate(${property.name}Field)) { \"${
@@ -339,7 +340,7 @@ class DslProcessor(
         }
         val validator = checker.validator(property, name, annotation?.type("validator"), type)
         if (!checker.valid) return null
-        return RequiredProperty(name, typeName, validator, checker.message(annotation, name))
+        return RequiredProperty(name, typeName, validator?.prefix, checker.message(annotation, name))
     }
 
     /**
@@ -402,7 +403,8 @@ class DslProcessor(
             storageTypeName = mapper?.storageTypeName ?: typeName,
             initialExpression = initialExpression,
             mapper = mapper?.prefix,
-            validator = validator,
+            validator = validator?.prefix,
+            validatorAcceptsNull = validator?.acceptsNull == true,
             message = checker.message(annotation, name),
         )
     }
@@ -445,6 +447,7 @@ class DslProcessor(
         val elementTypeName = checker.renderTypeReference(property, elementTypeReference) ?: return null
         val validator = checker.validator(property, name, annotation.type("validator"), elementType)
         if (!checker.valid) return null
+        val validatorPrefix = validator?.prefix
 
         val children = mutableListOf<ChildSpec>()
         for (argumentType in annotation.typeArray("children")) {
@@ -464,7 +467,7 @@ class DslProcessor(
             checker.report(property, "Two or more children of @DslList property $name produce the same function name.")
             return null
         }
-        return ListProperty(name, elementTypeName, validator, checker.message(annotation, name), children)
+        return ListProperty(name, elementTypeName, validatorPrefix, checker.message(annotation, name), children)
     }
 
     /**
@@ -783,6 +786,7 @@ class DslProcessor(
             is Double -> formatFloatingPoint(value)
             is KSType -> value.declaration.qualifiedName?.asString()?.let { "$it::class" }
             is KSClassDeclaration -> value.qualifiedName?.asString()
+            is KSName -> value.asString()
             is List<*> -> value.joinToString(", ", "[", "]") { renderAnnotationValue(it) ?: "null" }
             else -> null
         }
@@ -794,15 +798,16 @@ class DslProcessor(
         }
 
         /**
-         * Returns the validator invocation prefix, `null` when no validator is
-         * configured or a diagnostic was reported.
+         * Returns the validator invocation prefix together with whether the
+         * validator accepts `null`, or `null` when no validator is configured
+         * or a diagnostic was reported.
          */
         fun validator(
             property: KSPropertyDeclaration,
             propertyName: String,
             validatorType: KSType?,
             valueType: KSType,
-        ): String? {
+        ): ValidatorInfo? {
             if (validatorType == null || validatorType.isUnit()) return null
             if (validatorType.isError) {
                 reportUnresolved(property, "The validator of property $propertyName is not resolvable yet.")
@@ -812,12 +817,12 @@ class DslProcessor(
                 report(property, "The validator of property $propertyName must be a class or object.")
                 return null
             }
-            val dslValidatorType = declaration.findSuperType(property, DSL_VALIDATOR_NAME)
-            if (dslValidatorType == null) {
+            val dslValidatorArguments = findSuperTypeArguments(declaration, property, DSL_VALIDATOR_NAME)
+            if (dslValidatorArguments == null) {
                 report(property, "The validator of property $propertyName must implement DslValidator.")
                 return null
             }
-            val validatedType = dslValidatorType.arguments.singleOrNull()?.type?.resolve()
+            val validatedType = dslValidatorArguments.singleOrNull()
             if (validatedType == null || !validatedType.isAssignableFrom(valueType)) {
                 report(
                     property,
@@ -830,7 +835,8 @@ class DslProcessor(
                 )
                 return null
             }
-            return instantiationPrefix(property, propertyName, declaration, "validator")
+            val prefix = instantiationPrefix(property, propertyName, declaration, "validator") ?: return null
+            return ValidatorInfo(prefix, validatedType.isMarkedNullable)
         }
 
         /**
@@ -853,12 +859,11 @@ class DslProcessor(
                 report(property, "The mapper of property $propertyName must be a class or object.")
                 return null
             }
-            val dslMapperType = declaration.findSuperType(property, DSL_MAPPER_NAME)
-            if (dslMapperType == null) {
+            val dslMapperArguments = findSuperTypeArguments(declaration, property, DSL_MAPPER_NAME)
+            if (dslMapperArguments == null) {
                 report(property, "The mapper of property $propertyName must implement DslMapper.")
                 return null
             }
-            val typeArguments = dslMapperType.arguments.map { it.type?.resolve() }
             if (typeArguments.size != 2 || typeArguments.any { it == null }) {
                 report(
                     property,
@@ -977,32 +982,58 @@ class DslProcessor(
         private fun KSType.isUnit(): Boolean =
             declaration.qualifiedName?.asString() == "kotlin.Unit"
 
-        private fun KSClassDeclaration.findSuperType(symbol: KSNode, qualifiedName: String): KSType? {
-            val pending = ArrayDeque<KSType>()
-            superTypes.forEach { pending += it.resolve() }
+        /**
+         * Searches the supertype hierarchy of [declaration] for [qualifiedName]
+         * and returns the type arguments of the match as seen from the
+         * perspective of [declaration], substituting the type parameters of any
+         * generic bases along the way. Returns `null` when the supertype is not
+         * implemented or an unresolvable type was met.
+         */
+        fun findSuperTypeArguments(
+            declaration: KSClassDeclaration,
+            symbol: KSNode,
+            qualifiedName: String,
+        ): List<KSType?>? {
+            val pending = ArrayDeque<Pair<KSClassDeclaration, Map<KSTypeParameter, KSType>>>()
+            pending += declaration to emptyMap()
             val visited = mutableSetOf<String>()
             while (pending.isNotEmpty()) {
-                val type = pending.removeFirst()
-                if (type.isError) {
-                    reportUnresolved(symbol, "A supertype of ${symbolDescription(symbol)} is not resolvable yet.")
-                    return null
-                }
-                val declaration = type.declaration as? KSClassDeclaration ?: continue
-                val name = declaration.qualifiedName?.asString() ?: continue
-                if (!visited.add(name)) continue
-                if (name == qualifiedName) return type
-                for (superType in declaration.superTypes) {
+                val (current, environment) = pending.removeFirst()
+                val currentName = current.qualifiedName?.asString() ?: continue
+                if (!visited.add(currentName)) continue
+                for (superType in current.superTypes) {
                     val resolved = superType.resolve()
-                    pending += if (type.arguments.isEmpty() || resolved.declaration.typeParameters.size != type.arguments.size) {
-                        resolved
-                    } else {
-                        resolved.replace(type.arguments)
+                    if (resolved.isError) {
+                        reportUnresolved(symbol, "A supertype of ${symbolDescription(symbol)} is not resolvable yet.")
+                        return null
                     }
+                    val superDeclaration = resolved.declaration as? KSClassDeclaration ?: continue
+                    if (superDeclaration.qualifiedName?.asString() == qualifiedName) {
+                        return resolved.arguments.map { argument ->
+                            argument.type?.resolve()?.let { resolveThrough(it, environment) }
+                        }
+                    }
+                    val parameters = superDeclaration.typeParameters
+                    val nextEnvironment = parameters.zip(resolved.arguments)
+                        .mapNotNull { (parameter, argument) ->
+                            val argumentType = argument.type?.resolve() ?: return@mapNotNull null
+                            parameter to resolveThrough(argumentType, environment)
+                        }
+                        .toMap()
+                    pending += superDeclaration to nextEnvironment
                 }
             }
             return null
         }
+
+        private fun resolveThrough(type: KSType, environment: Map<KSTypeParameter, KSType>): KSType =
+            (type.declaration as? KSTypeParameter)?.let(environment::get) ?: type
     }
+
+    private class ValidatorInfo(
+        val prefix: String,
+        val acceptsNull: Boolean,
+    )
 
     private data class MapperInfo(
         val prefix: String,
@@ -1029,6 +1060,7 @@ class DslProcessor(
         val initialExpression: String,
         val mapper: String?,
         val validator: String?,
+        val validatorAcceptsNull: Boolean,
         val message: String,
     ) {
         fun getterExpression(field: String): String =

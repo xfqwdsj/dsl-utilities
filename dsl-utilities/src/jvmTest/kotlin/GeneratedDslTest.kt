@@ -9,6 +9,7 @@ class SampleDslTest {
 
         assertEquals("1", sample.intToString)
         assertEquals("2", sample.genericBaseToString)
+        assertEquals("3", sample.reorderedToString)
         assertEquals("2", sample.evenIntToString)
         assertNull(sample.nickname)
         assertEquals("DEFAULT", sample.prepared)
@@ -20,6 +21,7 @@ class SampleDslTest {
         val sample = buildSample(name = "required", title = "title") {
             intToString = "10"
             genericBaseToString = "20"
+            reorderedToString = "30"
             evenIntToString = "4"
             nickname = "nick"
             prepared = "Prepared"
@@ -29,6 +31,7 @@ class SampleDslTest {
 
         assertEquals("10", sample.intToString)
         assertEquals("20", sample.genericBaseToString)
+        assertEquals("30", sample.reorderedToString)
         assertEquals("4", sample.evenIntToString)
         assertEquals("nick", sample.nickname)
         assertEquals("PREPARED", sample.prepared)
@@ -78,6 +81,18 @@ class SampleDslTest {
                 numbers.add(-1)
             }
         }
+    }
+
+    @Test
+    fun `null default is validated at construction`() {
+        assertFailsWith<IllegalArgumentException> { buildInvalidNullable() }
+    }
+
+    @Test
+    fun `valid initial passes the nullable validator`() {
+        val nullable = buildNullable { nickname = "ltfan" }
+
+        assertEquals("ltfan", nullable.nickname)
     }
 
     @Test
