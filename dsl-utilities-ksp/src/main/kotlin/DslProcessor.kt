@@ -147,7 +147,7 @@ class DslProcessor(
                     parameter to checker.substituteType(argumentType, emptyMap())
                 }
                 .toMap()
-            for (member in hierarchy.abstractProperties(supertypeDeclaration, environment)) {
+            for (member in hierarchy.allProperties(supertypeDeclaration, environment)) {
                 val property = member.declaration
                 val name = property.simpleName.asString()
                 val rendered = checker.renderTypeName(
@@ -157,11 +157,16 @@ class DslProcessor(
                     ?: break
                 val provided = resultPropertyTypes[name]
                 when {
-                    provided == null ->
+                    // A concrete supertype property keeps its default when the
+                    // DSL does not provide a member of the same name; an
+                    // abstract one has no default and must be provided.
+                    provided == null && hierarchy.isAbstract(property) ->
                         checker.report(
                             spec,
                             "The result supertype ${supertypeDeclaration.simpleName.asString()} declares property $name, which the DslBuilder interface does not provide."
                         )
+
+                    provided == null -> Unit
 
                     provided != rendered ->
                         checker.report(
@@ -538,7 +543,8 @@ class DslProcessor(
                     )
                     .build()
                 if (child.required.isEmpty()) {
-                    shorthands += PropertySpec.builder(child.functionName, UNIT, KModifier.PUBLIC)
+                    shorthands += PropertySpec.builder(child.functionName, UNIT)
+                        .addModifiers(visibility)
                         .receiver(classNameOf(specQualifiedName))
                         .getter(
                             FunSpec.getterBuilder()
@@ -952,6 +958,27 @@ class DslProcessor(
             }
             return members.values.toList()
         }
+
+        /**
+         * Collects every property of the hierarchy, abstract or concrete, so the
+         * caller can tell override candidates from members that must be provided;
+         * the nearest declaration wins when a name is redeclared.
+         */
+        fun allProperties(
+            declaration: KSClassDeclaration,
+            initialEnvironment: Map<KSTypeParameter, KSType> = emptyMap(),
+        ): List<SubstitutedMember<KSPropertyDeclaration>> {
+            val members = LinkedHashMap<String, SubstitutedMember<KSPropertyDeclaration>>()
+            walk(declaration, initialEnvironment) { member, environment ->
+                if (member !is KSPropertyDeclaration) return@walk
+                val name = member.simpleName.asString()
+                if (name !in members) members[name] = SubstitutedMember(member, environment)
+            }
+            return members.values.toList()
+        }
+
+        /** Returns `true` when [property] is abstract in its declaring interface. */
+        fun isAbstract(property: KSPropertyDeclaration): Boolean = property.isAbstractMember()
 
         /**
          * Returns `true` when the property is abstract in its declaring interface,

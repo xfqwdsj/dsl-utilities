@@ -275,3 +275,23 @@ interface LambdaDsl {
     @DslValue
     var suspending: (suspend () -> Unit)?
 }
+
+interface Defaulted {
+    val label: String
+        get() = "default"
+}
+
+@DslBuilder(supertype = Defaulted::class)
+interface OverridingDsl {
+    @DslValue(initial = "default")
+    var label: String
+}
+
+@DslBuilder(supertype = Defaulted::class)
+interface InheritingDefaultDsl
+
+@DslBuilder
+internal interface ShorthandDsl {
+    @DslList(children = [TransientEventDsl::class])
+    var items: MutableList<SampleEvent>
+}

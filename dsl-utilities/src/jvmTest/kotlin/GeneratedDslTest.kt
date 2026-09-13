@@ -322,4 +322,28 @@ class LambdaDslTest {
         assertTrue(text.contains("x: Int"), text)
         assertTrue(text.contains("suspend () -> Unit"), text)
     }
+
+    @Test
+    fun `concrete supertype properties are overridden`() {
+        val overriding = buildOverriding { label = "custom" }
+
+        assertEquals("custom", overriding.label)
+    }
+
+    @Test
+    fun `unprovided concrete supertype properties keep their default`() {
+        val inheriting = buildInheritingDefault()
+
+        assertEquals("default", inheriting.label)
+    }
+
+    @Test
+    fun `internal shorthand properties stay internal`() {
+        val shorthand = buildShorthand {
+            transientEvent()
+            transientEvent { intensity = 0.5f }
+        }
+
+        assertEquals(2, shorthand.items.size)
+    }
 }
