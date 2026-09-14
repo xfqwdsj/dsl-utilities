@@ -26,10 +26,13 @@ class DslProcessor(
 ) : SymbolProcessor {
 
     private val generatedTypeOwners = mutableMapOf<String, String>()
-    private val generatedFunctionOwners = mutableMapOf<String, String>()
+    private val generatedFunctionOwners = mutableMapOf<String, MutableList<Pair<String, GeneratedSignature>>>()
     private val generatedPropertyOwners = mutableMapOf<String, String>()
+    private val reportedStarProjections = mutableSetOf<String>()
+    private var packageDeclarations: MutableMap<String, List<KSDeclaration>>? = null
 
     override fun process(resolver: Resolver): List<KSAnnotated> {
+        packageDeclarations = null
         val deferred = mutableListOf<KSAnnotated>()
         for (symbol in resolver.getSymbolsWithAnnotation("top.ltfan.dslutilities.DslBuilder")) {
             // KSP's validation covers unresolved declarations referenced from
@@ -95,7 +98,7 @@ class DslProcessor(
         val valueProperties = mutableListOf<ValueProperty>()
         val listProperties = mutableListOf<ListProperty>()
         val childScopes = mutableListOf<ChildScope>()
-        val hierarchy = Hierarchy(checker)
+        val hierarchy = Hierarchy(checker, reportedStarProjections)
         val specProperties = hierarchy.allProperties(spec)
         for (member in specProperties) {
             val property = member.declaration
@@ -116,7 +119,7 @@ class DslProcessor(
                 checker.report(property, "Property $name must not be annotated with both @DslValue and @DslList.")
                 continue
             }
-            val type = checker.expandAliases(checker.substituteType(property.type.resolve(), member.environment))
+            val type = checker.substituteType(property.type.resolve(), member.environment)
             if (dslList != null) {
                 listProperty(name, property, type, dslList, checker)?.let(listProperties::add)
             } else if (!property.isMutable) {
@@ -215,6 +218,10 @@ class DslProcessor(
             for (property in requiredProperties) put(property.name, property.type)
             for (property in valueProperties) put(property.name, property.type)
             for (property in listProperties) put(property.name, checker.immutableListType(property.elementType))
+            // A child scope's property type is the generated concrete result
+            // class, which is not resolvable while it is generated; its declared
+            // supertype carries the assignability and the rendered concrete name
+            // covers the exact match.
             for (property in childScopes) put(property.name, property.child.resultSupertype)
         }
         if (resultSupertype != null) {
@@ -788,6 +795,7 @@ class DslProcessor(
         annotation: KSAnnotation?,
         checker: Checker,
     ): RequiredProperty? {
+        val resolvedType = checker.expandAliases(type)
         val typeName = checker.renderTypeName(property, type)
             ?: return null
         if (annotation?.string("initial")?.isNotEmpty() == true) {
@@ -799,9 +807,9 @@ class DslProcessor(
             checker.report(property, "@DslValue.mapper applies to var properties; $name is a val.")
             return null
         }
-        val validator = checker.validator(property, name, annotation?.type("validator"), type)
+        val validator = checker.validator(property, name, annotation?.type("validator"), resolvedType)
         if (!checker.valid) return null
-        return RequiredProperty(name, typeName, type, validator, checker.message(annotation, name))
+        return RequiredProperty(name, typeName, resolvedType, validator, checker.message(annotation, name))
     }
 
     /**
@@ -817,7 +825,8 @@ class DslProcessor(
         annotation: KSAnnotation,
         checker: Checker,
     ): ValueProperty? {
-        if (type.declaration.qualifiedName?.asString() == "kotlin.collections.MutableList") {
+        val resolvedType = checker.expandAliases(type)
+        if (resolvedType.declaration.qualifiedName?.asString() == "kotlin.collections.MutableList") {
             checker.report(
                 property,
                 "Property $name has a MutableList type; list properties are declared with @DslList."
@@ -825,11 +834,11 @@ class DslProcessor(
             return null
         }
         val typeName = checker.renderTypeName(property, type) ?: return null
-        val mapper = checker.mapper(property, name, annotation.type("mapper"), type)
+        val mapper = checker.mapper(property, name, annotation.type("mapper"), resolvedType)
         if (!checker.valid) return null
         val initial = annotation.string("initial").orEmpty().takeIf { it.isNotEmpty() }
         when (initial) {
-            null if !type.isMarkedNullable -> {
+            null if !resolvedType.isMarkedNullable -> {
                 checker.report(
                     property,
                     "Property $name is non-nullable and has no initial value; declare it as a val to make it required, declare it with a nullable type, or provide @DslValue.initial."
@@ -848,20 +857,20 @@ class DslProcessor(
         val initialExpression = if (initial == null) {
             "null"
         } else {
-            val literal = checker.literal(property, name, initial, type) ?: return null
+            val literal = checker.literal(property, name, initial, resolvedType) ?: return null
             if (mapper != null) "${mapper.prefix}.toStored($literal)" else literal
         }
         val validator = checker.validator(
             property,
             name,
             annotation.type("validator"),
-            mapper?.storedType ?: type,
+            mapper?.storedType ?: resolvedType,
         )
         if (!checker.valid) return null
         return ValueProperty(
             name = name,
             typeName = typeName,
-            type = type,
+            type = resolvedType,
             storageTypeName = mapper?.storageTypeName ?: typeName,
             initialExpression = initialExpression,
             mapper = mapper?.prefix,
@@ -889,21 +898,24 @@ class DslProcessor(
             checker.report(property, "@DslList applies to var properties; $name is a val.")
             return null
         }
-        if (type.declaration.qualifiedName?.asString() != "kotlin.collections.MutableList" || type.arguments.size != 1) {
+        val resolvedType = checker.expandAliases(type)
+        if (resolvedType.declaration.qualifiedName?.asString() != "kotlin.collections.MutableList" ||
+            resolvedType.arguments.size != 1
+        ) {
             checker.report(
                 property,
                 "Property $name annotated with @DslList has a type other than MutableList of the element type."
             )
             return null
         }
-        if (type.isMarkedNullable) {
+        if (resolvedType.isMarkedNullable) {
             checker.report(
                 property,
                 "@DslList property $name must not be nullable; the generated list is always present."
             )
             return null
         }
-        val argument = type.arguments.single()
+        val argument = resolvedType.arguments.single()
         if (argument.variance != Variance.INVARIANT) {
             checker.report(
                 property,
@@ -911,12 +923,13 @@ class DslProcessor(
             )
             return null
         }
-        val elementType = argument.type?.resolve()?.let { checker.expandAliases(it) } ?: run {
+        val elementType = argument.type?.resolve() ?: run {
             checker.report(property, "Property $name has an unsupported element type.")
             return null
         }
         val elementTypeName = checker.renderTypeName(property, elementType) ?: return null
-        val validatorPrefix = checker.validator(property, name, annotation.type("validator"), elementType)
+        val resolvedElementType = checker.expandAliases(elementType)
+        val validatorPrefix = checker.validator(property, name, annotation.type("validator"), resolvedElementType)
         if (!checker.valid) return null
 
         val children = mutableListOf<ChildSpec>()
@@ -930,10 +943,10 @@ class DslProcessor(
                 return null
             }
             val child = resolveChild(childDeclaration, checker) ?: return null
-            val elementQualifiedName = elementType.makeNotNullable().declaration.qualifiedName?.asString()
+            val elementQualifiedName = resolvedElementType.makeNotNullable().declaration.qualifiedName?.asString()
             val acceptsResult = elementQualifiedName == "kotlin.Any" ||
                     elementQualifiedName == child.resultQualifiedName ||
-                    child.resultSupertype?.let(elementType::isAssignableFrom) == true
+                    child.resultSupertype?.let(resolvedElementType::isAssignableFrom) == true
             if (!acceptsResult) {
                 checker.report(
                     property,
@@ -952,7 +965,7 @@ class DslProcessor(
         return ListProperty(
             name,
             elementTypeName,
-            elementType,
+            resolvedElementType,
             validatorPrefix,
             checker.message(annotation, name),
             children,
@@ -980,7 +993,7 @@ class DslProcessor(
             return null
         }
         val functionReturnType = function.returnType?.resolve()
-            ?.let { checker.substituteType(it, environment) }
+            ?.let { checker.expandAliases(checker.substituteType(it, environment)) }
         if (functionReturnType?.isError == true) {
             checker.reportUnresolved(function, "The return type of @DslChild function $name is not resolvable yet.")
             return null
@@ -1012,15 +1025,16 @@ class DslProcessor(
             return null
         }
         // The block type of a child scope inherited from a generic base
-        // carries the base's type parameters; substituting them resolves the
-        // receiver from the perspective of the analyzed interface. The shape
-        // checks stay on the declared type because substitution does not
-        // carry over the receiver and suspend markers.
-        val isReceiverStyle = declaredBlockType.annotations.any { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }
-        val isSuspend = declaredBlockType.isSuspendFunctionType
-        val blockType = checker.substituteType(declaredBlockType, environment)
+        // carries the base's type parameters; expanding aliases and
+        // substituting them resolves the receiver from the perspective of the
+        // analyzed interface. The shape checks read the expanded type because
+        // substitution does not carry over the receiver and suspend markers.
+        val blockShape = checker.expandAliases(declaredBlockType)
+        val isReceiverStyle = blockShape.annotations.any { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }
+        val isSuspend = blockShape.isSuspendFunctionType
+        val blockType = checker.substituteType(blockShape, environment)
         val arguments = blockType.arguments
-        if ((!declaredBlockType.isFunctionType && !isSuspend) || arguments.size != (if (isReceiverStyle) 2 else 1)) {
+        if ((!blockShape.isFunctionType && !isSuspend) || arguments.size != (if (isReceiverStyle) 2 else 1)) {
             checker.report(
                 function,
                 "The last parameter of @DslChild function $name must be a function type with the child DslBuilder interface as receiver and a Unit return type."
@@ -1044,7 +1058,7 @@ class DslProcessor(
             )
             return null
         }
-        val blockReturnType = arguments.last().type?.resolve()
+        val blockReturnType = arguments.last().type?.resolve()?.let { checker.expandAliases(it) }
         if (blockReturnType?.declaration?.qualifiedName?.asString() != "kotlin.Unit") {
             checker.report(
                 function,
@@ -1057,6 +1071,10 @@ class DslProcessor(
                 function,
                 "The last parameter of @DslChild function $name must be a function type with the child DslBuilder interface as receiver."
             )
+            return null
+        }
+        if (receiverType.isMarkedNullable) {
+            checker.report(function, "The receiver of @DslChild function $name must not be nullable.")
             return null
         }
         val childDeclaration = receiverType.declaration as? KSClassDeclaration ?: run {
@@ -1137,20 +1155,27 @@ class DslProcessor(
             )
             return null
         }
-        val hierarchy = Hierarchy(checker)
+        val hierarchy = Hierarchy(checker, reportedStarProjections)
         val required = mutableListOf<RequiredProperty>()
         for (member in hierarchy.allProperties(declaration).filter { hierarchy.isAbstract(it.declaration) }) {
             val property = member.declaration
             if (property.isMutable) continue
-            val type = checker.expandAliases(checker.substituteType(property.type.resolve(), member.environment))
+            val type = checker.substituteType(property.type.resolve(), member.environment)
             val typeName = checker.renderTypeName(property, type) ?: return null
-            required += RequiredProperty(property.simpleName.asString(), typeName, type, null, "")
+            required += RequiredProperty(
+                property.simpleName.asString(),
+                typeName,
+                checker.expandAliases(type),
+                null,
+                ""
+            )
         }
         return ChildSpec(
             functionName = decapitalize(specName.removeSuffix("Dsl").takeIf { it.isNotEmpty() } ?: specName),
             builderQualifiedName = qualify(names.builderName),
             resultQualifiedName = qualify(names.resultName),
             resultSupertype = resultSupertype?.type,
+            specType = declaration.asType(emptyList()),
             builderVisibility = builderVisibility,
             resultVisibility = resultVisibility,
             specQualifiedName = specQualifiedName,
@@ -1217,7 +1242,6 @@ class DslProcessor(
      * because generated functions and extension properties share the
      * package-level scope with them.
      */
-    @OptIn(KspExperimental::class)
     private fun reserveGeneratedNames(
         spec: KSClassDeclaration,
         resolver: Resolver,
@@ -1233,10 +1257,13 @@ class DslProcessor(
         val typeNames = listOf(names.builderName, names.resultName)
         for (name in typeNames) {
             val qualifiedName = qualified(name)
-            val existing = resolver.getClassDeclarationByName(resolver.getKSNameFromString(qualifiedName))
+            val existing = resolver.getClassDeclarationByName(resolver.getKSNameFromString(qualifiedName)) != null ||
+                    declarationsInPackage(resolver, packageName).any { declaration ->
+                        declaration is KSTypeAlias && declaration.simpleName.asString() == name
+                    }
             val reservedBy = generatedTypeOwners[qualifiedName]
             when {
-                existing != null ->
+                existing ->
                     checker.report(spec, "Generated type $qualifiedName conflicts with an existing declaration.")
 
                 reservedBy != null && reservedBy != owner ->
@@ -1244,26 +1271,9 @@ class DslProcessor(
             }
         }
 
-        // An extension receiver joins the JVM parameter list, so the receiver
-        // is part of the erased signature a generated function is compared
-        // against.
-        val trailingLambdaErasure = "kotlin.Function1"
-        fun erasedParameters(function: KSFunctionDeclaration): List<String> =
-            (function.extensionReceiver?.resolve()?.let { listOf(checker.erasureKey(it)) } ?: emptyList()) +
-                    function.parameters.map { checker.erasureKey(it.type.resolve()) }
-
-        var packageDeclarations: List<KSDeclaration>? = null
-        fun declarationsInPackage(): List<KSDeclaration> {
-            packageDeclarations?.let { return it }
-            val loaded = resolver.getDeclarationsFromPackage(packageName).toList()
-            packageDeclarations = loaded
-            return loaded
-        }
-
-        val functionKeys = mutableListOf<String>()
-        fun reserveFunction(name: String, parameters: List<String>) {
+        val reservedFunctions = mutableListOf<Pair<String, Pair<String, GeneratedSignature>>>()
+        fun reserveFunction(name: String, signature: GeneratedSignature) {
             val qualifiedName = qualified(name)
-            val key = "$qualifiedName(${parameters.joinToString()})"
             val existing = resolver.getFunctionDeclarationsByName(
                 resolver.getKSNameFromString(qualifiedName),
                 includeTopLevel = true,
@@ -1271,9 +1281,11 @@ class DslProcessor(
                 function.parentDeclaration == null &&
                         function.containingFile != null &&
                         function.packageName.asString() == packageName &&
-                        erasedParameters(function) == parameters
+                        matchesSignature(function, signature, checker, resolver)
             }
-            val reservedBy = generatedFunctionOwners[key]
+            val reservedBy = generatedFunctionOwners[qualifiedName]
+                ?.firstOrNull { (_, reserved) -> sameSignature(reserved, signature, checker) }
+                ?.first
             when {
                 existing ->
                     checker.report(spec, "Generated function $qualifiedName conflicts with an existing declaration.")
@@ -1281,26 +1293,22 @@ class DslProcessor(
                 reservedBy != null && reservedBy != owner ->
                     checker.report(spec, "Generated function $qualifiedName is also produced by $reservedBy.")
             }
-            functionKeys += key
+            reservedFunctions += qualifiedName to (owner to signature)
         }
 
+        val specType = spec.asType(emptyList())
         if (names.generateFunction) {
-            reserveFunction(
-                names.functionName,
-                requiredProperties.map { checker.erasureKey(it.type) } + trailingLambdaErasure,
-            )
+            reserveFunction(names.functionName, GeneratedSignature(null, requiredProperties.map { it.type }, specType))
         }
         for (property in listProperties) {
             for (child in property.children) {
                 reserveFunction(
                     child.functionName,
-                    listOf(specQualifiedName) +
-                            child.required.map { checker.erasureKey(it.type) } +
-                            trailingLambdaErasure,
+                    GeneratedSignature(specType, child.required.map { it.type }, child.specType),
                 )
                 if (child.required.isEmpty() && !child.requiresConfiguration) {
                     val shorthandKey = "$specQualifiedName.${child.functionName}"
-                    val existing = declarationsInPackage().any { declaration ->
+                    val existing = declarationsInPackage(resolver, packageName).any { declaration ->
                         declaration is KSPropertyDeclaration &&
                                 declaration.parentDeclaration == null &&
                                 declaration.containingFile != null &&
@@ -1329,7 +1337,66 @@ class DslProcessor(
 
         if (!checker.valid) return
         for (name in typeNames) generatedTypeOwners[qualified(name)] = owner
-        for (key in functionKeys) generatedFunctionOwners[key] = owner
+        for ((qualifiedName, entry) in reservedFunctions) {
+            generatedFunctionOwners.getOrPut(qualifiedName) { mutableListOf() } += entry
+        }
+    }
+
+    /**
+     * Returns `true` when two generated signatures would be conflicting
+     * overloads, which is the case when their receivers and parameter types
+     * denote the same Kotlin types.
+     */
+    private fun sameSignature(
+        first: GeneratedSignature,
+        second: GeneratedSignature,
+        checker: Checker,
+    ): Boolean =
+        checker.sameType(first.receiver, second.receiver) &&
+                first.parameters.size == second.parameters.size &&
+                first.parameters.zip(second.parameters).all { (firstType, secondType) ->
+                    checker.sameType(firstType, secondType)
+                } &&
+                checker.sameType(first.blockReceiver, second.blockReceiver)
+
+    /**
+     * Returns `true` when [function] declares the same Kotlin signature
+     * as a generated [signature], so emitting the generated declaration
+     * would produce conflicting overloads. Kotlin compares names and
+     * parameter types; an extension receiver counts as the first parameter.
+     */
+    private fun matchesSignature(
+        function: KSFunctionDeclaration,
+        signature: GeneratedSignature,
+        checker: Checker,
+        resolver: Resolver,
+    ): Boolean {
+        if (!checker.sameType(function.extensionReceiver?.resolve(), signature.receiver)) return false
+        if (function.parameters.size != signature.parameters.size + 1) return false
+        for ((index, parameter) in signature.parameters.withIndex()) {
+            if (!checker.sameType(function.parameters[index].type.resolve(), parameter)) return false
+        }
+        val block = checker.expandAliases(function.parameters.last().type.resolve())
+        if (!block.isFunctionType || block.isSuspendFunctionType) return false
+        if (block.annotations.none { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }) return false
+        val blockArguments = block.arguments
+        if (blockArguments.size != 2) return false
+        val blockReceiver = blockArguments[0].type?.resolve() ?: return false
+        val blockReturnType = blockArguments[1].type?.resolve() ?: return false
+        return checker.sameType(blockReceiver, signature.blockReceiver) &&
+                checker.sameType(blockReturnType, resolver.builtIns.unitType)
+    }
+
+    /**
+     * Returns the top-level declarations of [packageName], cached for the
+     * current processing round so that each specification reuses one lookup.
+     */
+    @OptIn(KspExperimental::class)
+    private fun declarationsInPackage(resolver: Resolver, packageName: String): List<KSDeclaration> {
+        val cache = packageDeclarations ?: mutableMapOf<String, List<KSDeclaration>>().also {
+            packageDeclarations = it
+        }
+        return cache.getOrPut(packageName) { resolver.getDeclarationsFromPackage(packageName).toList() }
     }
 
     /**
@@ -1375,8 +1442,10 @@ class DslProcessor(
      * declaration wins when a name is redeclared along the hierarchy; an
      * unresolvable supertype defers the spec to a later round.
      */
-    private class Hierarchy(private val checker: Checker) {
-        private val reportedStarProjections = mutableSetOf<String>()
+    private class Hierarchy(
+        private val checker: Checker,
+        private val reportedStarProjections: MutableSet<String>,
+    ) {
 
         fun abstractFunctions(declaration: KSClassDeclaration): List<SubstitutedMember<KSFunctionDeclaration>> {
             val members = LinkedHashMap<String, SubstitutedMember<KSFunctionDeclaration>>()
@@ -1521,7 +1590,18 @@ class DslProcessor(
             while (pending.isNotEmpty()) {
                 val (current, environment, depth) = pending.removeFirst()
                 val name = current.qualifiedName?.asString() ?: continue
-                if (!visited.add(name)) continue
+                // The same declaration can be inherited through paths with
+                // different type arguments; erasing those arguments keys each
+                // instantiation apart while recursive inheritance still
+                // converges.
+                val visitKey = buildString {
+                    append(name)
+                    for (parameter in current.typeParameters) {
+                        append('|')
+                        environment[parameter]?.let { append(checker.erasureKey(it)) }
+                    }
+                }
+                if (!visited.add(visitKey)) continue
                 for (member in current.declarations) visit(member, environment, depth)
                 for (superType in current.superTypes) {
                     val resolved = checker.expandAliases(superType.resolve())
@@ -1698,11 +1778,13 @@ class DslProcessor(
                 return null
             }
             return try {
-                if (resolved.isFunctionType || resolved.isSuspendFunctionType) {
+                val isFunction = resolved.isFunctionType || resolved.isSuspendFunctionType
+                val rendered = if (isFunction) {
                     lambdaTypeName(symbol, resolved)
                 } else {
-                    classifierTypeName(resolved)
+                    resolved.toTypeName()
                 }
+                rendered.annotated(listOf(type, resolved), ignoreExtensionMarker = isFunction)
             } catch (_: Exception) {
                 report(symbol, "The type of ${symbolDescription(symbol)} is unsupported.")
                 null
@@ -1739,28 +1821,32 @@ class DslProcessor(
                 ?: UNIT
             return LambdaTypeName.get(receiver = receiver, parameters = parameters, returnType = returnType)
                 .copy(nullable = type.isMarkedNullable, suspending = type.isSuspendFunctionType)
-                .annotated(type, ignoreExtensionMarker = true)
         }
 
-        private fun classifierTypeName(type: KSType): TypeName {
-            val typeName = type.toTypeName()
-            return typeName.annotated(type, ignoreExtensionMarker = false)
-        }
-
+        /**
+         * Applies the type-use annotations of [types] to this type. An alias usage
+         * and its underlying declaration can both carry annotations; identical
+         * specs are emitted once.
+         */
         private fun TypeName.annotated(
-            type: KSType,
+            types: List<KSType>,
             ignoreExtensionMarker: Boolean,
         ): TypeName {
-            val annotations = type.annotations.toList().mapNotNull { annotation ->
-                val shortName = annotation.shortName.asString()
-                if (ignoreExtensionMarker && shortName == EXTENSION_FUNCTION_TYPE) return@mapNotNull null
-                val qualifiedName = annotation.annotationType.resolve().declaration.qualifiedName?.asString()
-                if (qualifiedName == null) {
-                    null
-                } else if (qualifiedName in IGNORED_ANNOTATIONS || qualifiedName.startsWith("kotlin.internal.")) {
-                    null
-                } else {
-                    annotation.toAnnotationSpec()
+            val seen = mutableSetOf<String>()
+            val annotations = mutableListOf<AnnotationSpec>()
+            for (type in types) {
+                for (annotation in type.annotations) {
+                    val shortName = annotation.shortName.asString()
+                    if (ignoreExtensionMarker && shortName == EXTENSION_FUNCTION_TYPE) continue
+                    val qualifiedName = annotation.annotationType.resolve().declaration.qualifiedName?.asString()
+                    if (qualifiedName == null ||
+                        qualifiedName in IGNORED_ANNOTATIONS ||
+                        qualifiedName.startsWith("kotlin.internal.")
+                    ) {
+                        continue
+                    }
+                    val spec = annotation.toAnnotationSpec()
+                    if (seen.add(spec.toString())) annotations += spec
                 }
             }
             return if (annotations.isEmpty()) this else annotated(annotations)
@@ -1803,6 +1889,21 @@ class DslProcessor(
             return findSuperTypeArguments(providedDeclaration, symbol, expectedName) != null
         }
 
+        /**
+         * Returns `true` when both types denote the same Kotlin type, which is
+         * what makes two declarations conflicting overloads. Alias usage does not
+         * affect identity and neither do type-use annotations.
+         */
+        fun sameType(first: KSType?, second: KSType?): Boolean {
+            if (first == null || second == null) return first == null && second == null
+            val resolvedFirst = expandAliases(first)
+            val resolvedSecond = expandAliases(second)
+            return !resolvedFirst.isError &&
+                    !resolvedSecond.isError &&
+                    resolvedFirst.isAssignableFrom(resolvedSecond) &&
+                    resolvedSecond.isAssignableFrom(resolvedFirst)
+        }
+
         private fun symbolDescription(symbol: KSNode): String = when (symbol) {
             is KSPropertyDeclaration -> "property ${symbol.simpleName.asString()}"
             is KSFunctionDeclaration -> "function ${symbol.simpleName.asString()}"
@@ -1828,6 +1929,10 @@ class DslProcessor(
             }
             val declaration = resolvedValidator.declaration as? KSClassDeclaration ?: run {
                 report(property, "The validator of property $propertyName must be a class or object.")
+                return null
+            }
+            if (declaration.typeParameters.isNotEmpty()) {
+                report(property, "The validator of property $propertyName must not declare type parameters.")
                 return null
             }
             val dslValidatorArguments = findSuperTypeArguments(declaration, property, DSL_VALIDATOR_NAME)
@@ -1871,6 +1976,10 @@ class DslProcessor(
                 report(property, "The mapper of property $propertyName must be a class or object.")
                 return null
             }
+            if (declaration.typeParameters.isNotEmpty()) {
+                report(property, "The mapper of property $propertyName must not declare type parameters.")
+                return null
+            }
             val dslMapperArguments = findSuperTypeArguments(declaration, property, DSL_MAPPER_NAME)
             if (dslMapperArguments == null) {
                 report(property, "The mapper of property $propertyName must implement DslMapper.")
@@ -1911,10 +2020,6 @@ class DslProcessor(
             val prefix = declaration.qualifiedName?.asString()
             if (prefix == null) {
                 report(property, "The $role of property $propertyName has no qualified name.")
-                return null
-            }
-            if (declaration.typeParameters.isNotEmpty()) {
-                report(property, "The $role of property $propertyName must not declare type parameters.")
                 return null
             }
             var containingDeclaration: KSDeclaration? = declaration
@@ -2128,11 +2233,22 @@ class DslProcessor(
      * class, and required properties are resolved by name so that the parent
      * generated code can construct and build it.
      */
+    /**
+     * The Kotlin signature of a generated top-level function: its extension
+     * receiver, the required value parameters, and the trailing child block.
+     */
+    private class GeneratedSignature(
+        val receiver: KSType?,
+        val parameters: List<KSType>,
+        val blockReceiver: KSType,
+    )
+
     private class ChildSpec(
         val functionName: String,
         val builderQualifiedName: String,
         val resultQualifiedName: String,
         val resultSupertype: KSType?,
+        val specType: KSType,
         val builderVisibility: KModifier,
         val resultVisibility: KModifier,
         val specQualifiedName: String,
