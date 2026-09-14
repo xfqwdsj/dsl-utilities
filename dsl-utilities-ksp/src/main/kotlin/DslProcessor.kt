@@ -116,7 +116,7 @@ class DslProcessor(
                 checker.report(property, "Property $name must not be annotated with both @DslValue and @DslList.")
                 continue
             }
-            val type = checker.substituteType(property.type.resolve(), member.environment)
+            val type = checker.expandAliases(checker.substituteType(property.type.resolve(), member.environment))
             if (dslList != null) {
                 listProperty(name, property, type, dslList, checker)?.let(listProperties::add)
             } else if (!property.isMutable) {
@@ -124,12 +124,11 @@ class DslProcessor(
                     name,
                     property,
                     type,
-                    member.environment,
                     dslValue,
                     checker
                 )?.let(requiredProperties::add)
             } else if (dslValue != null) {
-                valueProperty(name, property, type, member.environment, dslValue, checker)?.let(valueProperties::add)
+                valueProperty(name, property, type, dslValue, checker)?.let(valueProperties::add)
             } else {
                 checker.report(property, "Property $name must be annotated with @DslValue or @DslList.")
             }
@@ -786,11 +785,10 @@ class DslProcessor(
         name: String,
         property: KSPropertyDeclaration,
         type: KSType,
-        environment: Map<KSTypeParameter, KSType>,
         annotation: KSAnnotation?,
         checker: Checker,
     ): RequiredProperty? {
-        val typeName = checker.renderTypeName(property, checker.substituteType(property.type.resolve(), environment))
+        val typeName = checker.renderTypeName(property, type)
             ?: return null
         if (annotation?.string("initial")?.isNotEmpty() == true) {
             checker.report(property, "@DslValue.initial applies to var properties; $name is a val.")
@@ -816,7 +814,6 @@ class DslProcessor(
         name: String,
         property: KSPropertyDeclaration,
         type: KSType,
-        environment: Map<KSTypeParameter, KSType>,
         annotation: KSAnnotation,
         checker: Checker,
     ): ValueProperty? {
@@ -827,8 +824,7 @@ class DslProcessor(
             )
             return null
         }
-        val typeName = checker.renderTypeName(property, checker.substituteType(property.type.resolve(), environment))
-            ?: return null
+        val typeName = checker.renderTypeName(property, type) ?: return null
         val mapper = checker.mapper(property, name, annotation.type("mapper"), type)
         if (!checker.valid) return null
         val initial = annotation.string("initial").orEmpty().takeIf { it.isNotEmpty() }
@@ -915,7 +911,7 @@ class DslProcessor(
             )
             return null
         }
-        val elementType = argument.type?.resolve() ?: run {
+        val elementType = argument.type?.resolve()?.let { checker.expandAliases(it) } ?: run {
             checker.report(property, "Property $name has an unsupported element type.")
             return null
         }
@@ -929,7 +925,7 @@ class DslProcessor(
                 checker.reportUnresolved(property, "A child of @DslList property $name is not resolvable yet.")
                 return null
             }
-            val childDeclaration = argumentType.declaration as? KSClassDeclaration ?: run {
+            val childDeclaration = checker.expandAliases(argumentType).declaration as? KSClassDeclaration ?: run {
                 checker.report(property, "The children of @DslList property $name must be DslBuilder interfaces.")
                 return null
             }
@@ -1056,7 +1052,7 @@ class DslProcessor(
             )
             return null
         }
-        val receiverType = arguments[0].type?.resolve() ?: run {
+        val receiverType = arguments[0].type?.resolve()?.let { checker.expandAliases(it) } ?: run {
             checker.report(
                 function,
                 "The last parameter of @DslChild function $name must be a function type with the child DslBuilder interface as receiver."
@@ -1146,7 +1142,7 @@ class DslProcessor(
         for (member in hierarchy.allProperties(declaration).filter { hierarchy.isAbstract(it.declaration) }) {
             val property = member.declaration
             if (property.isMutable) continue
-            val type = checker.substituteType(property.type.resolve(), member.environment)
+            val type = checker.expandAliases(checker.substituteType(property.type.resolve(), member.environment))
             val typeName = checker.renderTypeName(property, type) ?: return null
             required += RequiredProperty(property.simpleName.asString(), typeName, type, null, "")
         }
@@ -1175,9 +1171,9 @@ class DslProcessor(
         checkSubclassing: Boolean,
     ): ResultSupertype? {
         val specName = spec.simpleName.asString()
-        val type = annotation?.type("supertype")
-            ?.takeIf { it.declaration.qualifiedName?.asString() != "kotlin.Unit" }
-            ?: return null
+        val rawType = annotation?.type("supertype") ?: return null
+        val type = checker.expandAliases(rawType)
+        if (type.declaration.qualifiedName?.asString() == "kotlin.Unit") return null
         if (type.isError) {
             checker.reportUnresolved(spec, "@DslBuilder.supertype of $specName is not resolvable yet.")
             return null
@@ -1273,6 +1269,7 @@ class DslProcessor(
                 includeTopLevel = true,
             ).any { function ->
                 function.parentDeclaration == null &&
+                        function.containingFile != null &&
                         function.packageName.asString() == packageName &&
                         erasedParameters(function) == parameters
             }
@@ -1454,7 +1451,7 @@ class DslProcessor(
             if (nearest.size == 1) return nearest.single()
 
             val types = nearest.associateWith { member ->
-                checker.substituteType(member.declaration.type.resolve(), member.environment)
+                checker.expandAliases(checker.substituteType(member.declaration.type.resolve(), member.environment))
             }
             if (types.values.any { it.isError }) {
                 checker.reportUnresolved(root, "An inherited type of property $name is not resolvable yet.")
@@ -1527,7 +1524,7 @@ class DslProcessor(
                 if (!visited.add(name)) continue
                 for (member in current.declarations) visit(member, environment, depth)
                 for (superType in current.superTypes) {
-                    val resolved = superType.resolve()
+                    val resolved = checker.expandAliases(superType.resolve())
                     if (resolved.isError) {
                         checker.reportUnresolved(
                             declaration,
@@ -1635,13 +1632,40 @@ class DslProcessor(
             return type.replace(arguments)
         }
 
+        /**
+         * Resolves type aliases in [type] down to the underlying classifier,
+         * applying the alias's type arguments and preserving nullability, so
+         * classification and assignment see the real declaration rather than the
+         * alias.
+         */
+        fun expandAliases(type: KSType): KSType {
+            var current = type
+            val visited = mutableSetOf<String>()
+            while (!current.isError) {
+                val alias = current.declaration as? KSTypeAlias ?: break
+                val aliasName = alias.qualifiedName?.asString() ?: break
+                if (!visited.add(aliasName)) break
+                val arguments = current.arguments
+                // A star projection leaves the aliased type parameter without a
+                // value; keeping the alias lets callers reject the type instead
+                // of emitting the unbound parameter.
+                if (arguments.any { it.type == null }) break
+                val environment = alias.typeParameters.zip(arguments)
+                    .associate { (parameter, argument) ->
+                        parameter to requireNotNull(argument.type).resolve()
+                    }
+                current = substituteType(alias.type.resolve(), environment)
+            }
+            return if (type.isMarkedNullable) current.makeNullable() else current
+        }
+
         /** Returns the immutable list type generated for a list result property. */
         fun immutableListType(elementType: KSType): KSType? {
             val declaration = resolver.getClassDeclarationByName(
                 resolver.getKSNameFromString("kotlin.collections.List")
             ) ?: return null
             val argument = resolver.getTypeArgument(
-                resolver.createKSTypeReferenceFromKSType(elementType),
+                resolver.createKSTypeReferenceFromKSType(expandAliases(elementType)),
                 Variance.INVARIANT,
             )
             return declaration.asType(listOf(argument))
@@ -1668,15 +1692,16 @@ class DslProcessor(
          * for members inherited from generic bases.
          */
         fun renderTypeName(symbol: KSNode, type: KSType): TypeName? {
-            if (type.isError) {
+            val resolved = expandAliases(type)
+            if (resolved.isError) {
                 reportUnresolved(symbol, "The type of ${symbolDescription(symbol)} is not resolvable yet.")
                 return null
             }
             return try {
-                if (type.isFunctionType || type.isSuspendFunctionType) {
-                    lambdaTypeName(symbol, type)
+                if (resolved.isFunctionType || resolved.isSuspendFunctionType) {
+                    lambdaTypeName(symbol, resolved)
                 } else {
-                    classifierTypeName(type)
+                    classifierTypeName(resolved)
                 }
             } catch (_: Exception) {
                 report(symbol, "The type of ${symbolDescription(symbol)} is unsupported.")
@@ -1746,13 +1771,14 @@ class DslProcessor(
          * message accompanies an already-reported problem.
          */
         fun typeNameOrNull(type: KSType): TypeName? = try {
-            if (type.isError) null else type.toTypeName()
+            val resolved = expandAliases(type)
+            if (resolved.isError) null else resolved.toTypeName()
         } catch (_: Exception) {
             null
         }
 
         fun erasureKey(type: KSType): String =
-            type.makeNotNullable().declaration.qualifiedName?.asString()
+            expandAliases(type).makeNotNullable().declaration.qualifiedName?.asString()
                 ?: type.toString().substringBefore('<').removeSuffix("?")
 
         fun ownerIsSubtypeOf(
@@ -1768,10 +1794,12 @@ class DslProcessor(
         }
 
         fun accepts(expected: KSType, provided: KSType, symbol: KSNode): Boolean {
-            if (expected.isAssignableFrom(provided)) return true
-            if (expected.arguments.isNotEmpty() || provided.arguments.isNotEmpty()) return false
-            val expectedName = expected.declaration.qualifiedName?.asString() ?: return false
-            val providedDeclaration = provided.declaration as? KSClassDeclaration ?: return false
+            val resolvedExpected = expandAliases(expected)
+            val resolvedProvided = expandAliases(provided)
+            if (resolvedExpected.isAssignableFrom(resolvedProvided)) return true
+            if (resolvedExpected.arguments.isNotEmpty() || resolvedProvided.arguments.isNotEmpty()) return false
+            val expectedName = resolvedExpected.declaration.qualifiedName?.asString() ?: return false
+            val providedDeclaration = resolvedProvided.declaration as? KSClassDeclaration ?: return false
             return findSuperTypeArguments(providedDeclaration, symbol, expectedName) != null
         }
 
@@ -1791,12 +1819,14 @@ class DslProcessor(
             validatorType: KSType?,
             valueType: KSType,
         ): String? {
-            if (validatorType == null || validatorType.isUnit()) return null
-            if (validatorType.isError) {
+            if (validatorType == null) return null
+            val resolvedValidator = expandAliases(validatorType)
+            if (resolvedValidator.isUnit()) return null
+            if (resolvedValidator.isError) {
                 reportUnresolved(property, "The validator of property $propertyName is not resolvable yet.")
                 return null
             }
-            val declaration = validatorType.declaration as? KSClassDeclaration ?: run {
+            val declaration = resolvedValidator.declaration as? KSClassDeclaration ?: run {
                 report(property, "The validator of property $propertyName must be a class or object.")
                 return null
             }
@@ -1805,7 +1835,7 @@ class DslProcessor(
                 report(property, "The validator of property $propertyName must implement DslValidator.")
                 return null
             }
-            val validatedType = dslValidatorArguments.singleOrNull()
+            val validatedType = dslValidatorArguments.singleOrNull()?.let { expandAliases(it) }
             if (validatedType == null || !validatedType.isAssignableFrom(valueType)) {
                 report(
                     property,
@@ -1830,12 +1860,14 @@ class DslProcessor(
             mapperType: KSType?,
             propertyType: KSType,
         ): MapperInfo? {
-            if (mapperType == null || mapperType.isUnit()) return null
-            if (mapperType.isError) {
+            if (mapperType == null) return null
+            val resolvedMapper = expandAliases(mapperType)
+            if (resolvedMapper.isUnit()) return null
+            if (resolvedMapper.isError) {
                 reportUnresolved(property, "The mapper of property $propertyName is not resolvable yet.")
                 return null
             }
-            val declaration = mapperType.declaration as? KSClassDeclaration ?: run {
+            val declaration = resolvedMapper.declaration as? KSClassDeclaration ?: run {
                 report(property, "The mapper of property $propertyName must be a class or object.")
                 return null
             }
@@ -1851,8 +1883,8 @@ class DslProcessor(
                 )
                 return null
             }
-            val storedType = dslMapperArguments[0]!!
-            val valueType = dslMapperArguments[1]!!
+            val storedType = expandAliases(dslMapperArguments[0]!!)
+            val valueType = expandAliases(dslMapperArguments[1]!!)
             // The value type feeds both directions of the mapping: the setter
             // passes property values into `toStored`, and the getter assigns
             // the result of `toValue` back to the property type.
@@ -1879,6 +1911,10 @@ class DslProcessor(
             val prefix = declaration.qualifiedName?.asString()
             if (prefix == null) {
                 report(property, "The $role of property $propertyName has no qualified name.")
+                return null
+            }
+            if (declaration.typeParameters.isNotEmpty()) {
+                report(property, "The $role of property $propertyName must not declare type parameters.")
                 return null
             }
             var containingDeclaration: KSDeclaration? = declaration
@@ -1933,7 +1969,9 @@ class DslProcessor(
                 report(property, "@DslValue.initial of property $propertyName is \"$initial\", which is $detail.")
                 return null
             }
-            return when (type.makeNotNullable().declaration.qualifiedName?.asString()) {
+
+            val literalType = expandAliases(type).makeNotNullable()
+            return when (literalType.declaration.qualifiedName?.asString()) {
                 "kotlin.Int" -> initial.toLongOrNull()?.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }?.toString()
                     ?: fail("not an Int constant")
 
@@ -2011,7 +2049,7 @@ class DslProcessor(
                 val currentName = current.qualifiedName?.asString() ?: continue
                 if (!visited.add(currentName)) continue
                 for (superType in current.superTypes) {
-                    val resolved = superType.resolve()
+                    val resolved = expandAliases(superType.resolve())
                     if (resolved.isError) {
                         reportUnresolved(symbol, "A supertype of ${symbolDescription(symbol)} is not resolvable yet.")
                         return null
