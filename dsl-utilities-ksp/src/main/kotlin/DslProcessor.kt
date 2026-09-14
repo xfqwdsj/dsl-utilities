@@ -97,13 +97,26 @@ class DslProcessor(
         val childScopes = mutableListOf<ChildScope>()
         val hierarchy = Hierarchy(checker)
         val specProperties = hierarchy.allProperties(spec)
-        for (member in specProperties.filter { hierarchy.isAbstract(it.declaration) }) {
+        for (member in specProperties) {
             val property = member.declaration
             val name = property.simpleName.asString()
-            val type = checker.substituteType(property.type.resolve(), member.environment)
             val dslValue = property.annotation(DSL_VALUE_ANNOTATION)
             val dslList = property.annotation(DSL_LIST_ANNOTATION)
 
+            if (!hierarchy.isAbstract(property)) {
+                if (dslValue != null || dslList != null) {
+                    checker.report(
+                        property,
+                        "Property $name must be abstract for @DslValue or @DslList to generate its accessors."
+                    )
+                }
+                continue
+            }
+            if (dslValue != null && dslList != null) {
+                checker.report(property, "Property $name must not be annotated with both @DslValue and @DslList.")
+                continue
+            }
+            val type = checker.substituteType(property.type.resolve(), member.environment)
             if (dslList != null) {
                 listProperty(name, property, type, dslList, checker)?.let(listProperties::add)
             } else if (!property.isMutable) {
@@ -128,6 +141,16 @@ class DslProcessor(
                 checker.report(
                     spec,
                     "DslBuilder interface $specName overloads child-scope function $name; overloaded child-scope names are not supported."
+                )
+            }
+        }
+        for (member in hierarchy.allFunctions(spec)) {
+            val function = member.declaration
+            if (function.isAbstract) continue
+            if (function.annotation(DSL_CHILD_ANNOTATION) != null) {
+                checker.report(
+                    function,
+                    "@DslChild function ${function.simpleName.asString()} declares a body; declare it abstract so the processor can generate the body."
                 )
             }
         }
@@ -206,9 +229,7 @@ class DslProcessor(
                 val provided = resultPropertyTypes[name]
                 val resolvedProvided = resolvedResultPropertyTypes[name]
                 val compatible = provided == rendered ||
-                        resolvedProvided?.let(expectedType::isAssignableFrom) == true ||
-                        (expectedType.makeNotNullable().declaration.qualifiedName?.asString() == "kotlin.Any" &&
-                                (expectedType.isMarkedNullable || resolvedProvided?.isMarkedNullable == false))
+                        resolvedProvided?.let(expectedType::isAssignableFrom) == true
                 when {
                     // Result properties are read-only constructor values: a
                     // mutable supertype member can never be overridden by one,
@@ -460,8 +481,7 @@ class DslProcessor(
         }
 
         for (property in valueProperties) {
-            val validateDefault = property.initialExpression != "null" || property.validatorAcceptsNull
-            if (property.validator != null && validateDefault) {
+            if (property.validator != null) {
                 builder.addInitializerBlock(
                     CodeBlock.of(
                         "require(%L.validate(%N)) { %S }\n",
@@ -783,7 +803,7 @@ class DslProcessor(
         }
         val validator = checker.validator(property, name, annotation?.type("validator"), type)
         if (!checker.valid) return null
-        return RequiredProperty(name, typeName, type, validator?.prefix, checker.message(annotation, name))
+        return RequiredProperty(name, typeName, type, validator, checker.message(annotation, name))
     }
 
     /**
@@ -849,8 +869,7 @@ class DslProcessor(
             storageTypeName = mapper?.storageTypeName ?: typeName,
             initialExpression = initialExpression,
             mapper = mapper?.prefix,
-            validator = validator?.prefix,
-            validatorAcceptsNull = validator?.acceptsNull == true,
+            validator = validator,
             message = checker.message(annotation, name),
         )
     }
@@ -901,9 +920,8 @@ class DslProcessor(
             return null
         }
         val elementTypeName = checker.renderTypeName(property, elementType) ?: return null
-        val validator = checker.validator(property, name, annotation.type("validator"), elementType)
+        val validatorPrefix = checker.validator(property, name, annotation.type("validator"), elementType)
         if (!checker.valid) return null
-        val validatorPrefix = validator?.prefix
 
         val children = mutableListOf<ChildSpec>()
         for (argumentType in annotation.typeArray("children")) {
@@ -957,10 +975,6 @@ class DslProcessor(
         environment: Map<KSTypeParameter, KSType>,
         checker: Checker,
     ): ChildScope? {
-        if (!function.isAbstract) {
-            checker.report(function, "@DslChild function $name declares a body; the processor generates the body.")
-            return null
-        }
         if (function.extensionReceiver != null) {
             checker.report(function, "@DslChild function $name must not declare an extension receiver.")
             return null
@@ -1068,10 +1082,9 @@ class DslProcessor(
                 checker.report(function, "A parameter of @DslChild function $name has no name.")
                 return null
             }
-            val parameterTypeName =
-                checker.renderTypeName(function, checker.substituteType(parameter.type.resolve(), environment))
-                    ?: return null
-            if (parameterName != required.name || parameterTypeName != required.typeName) {
+            val parameterType = checker.substituteType(parameter.type.resolve(), environment)
+            val parameterTypeName = checker.renderTypeName(function, parameterType) ?: return null
+            if (parameterName != required.name || !required.type.isAssignableFrom(parameterType)) {
                 checker.report(
                     function,
                     "Parameter $parameterName of @DslChild function $name does not match required property ${required.name} of type ${required.typeName} of the child."
@@ -1293,6 +1306,7 @@ class DslProcessor(
                     val existing = declarationsInPackage().any { declaration ->
                         declaration is KSPropertyDeclaration &&
                                 declaration.parentDeclaration == null &&
+                                declaration.containingFile != null &&
                                 declaration.simpleName.asString() == child.functionName &&
                                 declaration.extensionReceiver?.resolve()
                                     ?.let { checker.erasureKey(it) } == specQualifiedName
@@ -1375,6 +1389,23 @@ class DslProcessor(
                 val signature = checker.functionSignature(member, environment)
                 if (!seen.add(signature)) return@walk
                 if (member.isAbstract) members[signature] = SubstitutedMember(member, environment)
+            }
+            return members.values.toList()
+        }
+
+        /**
+         * Collects every function of the hierarchy, abstract or concrete, so the
+         * caller can diagnose annotations placed on functions that declare their
+         * own body.
+         */
+        fun allFunctions(declaration: KSClassDeclaration): List<SubstitutedMember<KSFunctionDeclaration>> {
+            val members = LinkedHashMap<String, SubstitutedMember<KSFunctionDeclaration>>()
+            val seen = mutableSetOf<String>()
+            walk(declaration, emptyMap()) { member, environment, _ ->
+                if (member !is KSFunctionDeclaration) return@walk
+                val signature = checker.functionSignature(member, environment)
+                if (!seen.add(signature)) return@walk
+                members[signature] = SubstitutedMember(member, environment)
             }
             return members.values.toList()
         }
@@ -1751,16 +1782,15 @@ class DslProcessor(
         }
 
         /**
-         * Returns the validator invocation prefix together with whether the
-         * validator accepts `null`, or `null` when no validator is configured or a
-         * diagnostic was reported.
+         * Returns the validator invocation prefix, or `null` when no validator is
+         * configured or a diagnostic was reported.
          */
         fun validator(
             property: KSPropertyDeclaration,
             propertyName: String,
             validatorType: KSType?,
             valueType: KSType,
-        ): ValidatorInfo? {
+        ): String? {
             if (validatorType == null || validatorType.isUnit()) return null
             if (validatorType.isError) {
                 reportUnresolved(property, "The validator of property $propertyName is not resolvable yet.")
@@ -1786,7 +1816,7 @@ class DslProcessor(
                 return null
             }
             val prefix = instantiationPrefix(property, propertyName, declaration, "validator") ?: return null
-            return ValidatorInfo(prefix, validatedType.isMarkedNullable)
+            return prefix
         }
 
         /**
@@ -2012,11 +2042,6 @@ class DslProcessor(
         val shorthands: List<PropertySpec>,
     )
 
-    private class ValidatorInfo(
-        val prefix: String,
-        val acceptsNull: Boolean,
-    )
-
     private data class MapperInfo(
         val prefix: String,
         val storageTypeName: TypeName,
@@ -2044,7 +2069,6 @@ class DslProcessor(
         val initialExpression: String,
         val mapper: String?,
         val validator: String?,
-        val validatorAcceptsNull: Boolean,
         val message: String,
     ) {
         var fieldName: String = "${name}Field"
