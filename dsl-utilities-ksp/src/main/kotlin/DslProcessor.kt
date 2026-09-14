@@ -219,13 +219,14 @@ class DslProcessor(
             for (property in valueProperties) put(property.name, property.type)
             for (property in listProperties) put(property.name, checker.immutableListType(property.elementType))
             // A child scope's property type is the generated concrete result
-            // class, which is not resolvable while it is generated; its declared
-            // supertype carries the assignability and the rendered concrete name
-            // covers the exact match.
+            // class, which is not resolvable while it is generated. Its declared
+            // result supertype (when any) carries the assignability; the special
+            // case in `acceptsChildResult` covers the rest.
             for (property in childScopes) put(property.name, property.child.resultSupertype)
         }
         if (resultSupertype != null) {
             val supertypeDeclaration = resultSupertype.declaration
+            val childScopesByName = childScopes.associateBy { it.name }
             val resultPropertyTypes = resultProperties.toMap()
             for (member in hierarchy.allProperties(supertypeDeclaration)) {
                 val property = member.declaration
@@ -235,7 +236,8 @@ class DslProcessor(
                 val provided = resultPropertyTypes[name]
                 val resolvedProvided = resolvedResultPropertyTypes[name]
                 val compatible = provided == rendered ||
-                        resolvedProvided?.let(expectedType::isAssignableFrom) == true
+                        resolvedProvided?.let(expectedType::isAssignableFrom) == true ||
+                        childScopesByName[name]?.let { acceptsChildResult(expectedType, it.child) } == true
                 when {
                     // Result properties are read-only constructor values: a
                     // mutable supertype member can never be overridden by one,
@@ -501,7 +503,7 @@ class DslProcessor(
 
         for (property in listProperties) {
             val setter = FunSpec.setterBuilder()
-                .addParameter("newValue", MUTABLE_LIST.parameterizedBy(property.elementTypeName))
+                .addParameter("newValue", property.typeName)
                 .addStatement("val snapshot = newValue.toList()")
                 .addStatement("%N.clear()", property.nameField())
                 .addStatement("%N.addAll(snapshot)", property.nameField())
@@ -509,7 +511,7 @@ class DslProcessor(
             builder.addProperty(
                 PropertySpec.builder(
                     property.name,
-                    MUTABLE_LIST.parameterizedBy(property.elementTypeName),
+                    property.typeName,
                     KModifier.OVERRIDE
                 )
                     .mutable(true)
@@ -928,6 +930,7 @@ class DslProcessor(
             return null
         }
         val elementTypeName = checker.renderTypeName(property, elementType) ?: return null
+        val listTypeName = checker.renderTypeName(property, type) ?: return null
         val resolvedElementType = checker.expandAliases(elementType)
         val validatorPrefix = checker.validator(property, name, annotation.type("validator"), resolvedElementType)
         if (!checker.valid) return null
@@ -964,6 +967,7 @@ class DslProcessor(
         }
         return ListProperty(
             name,
+            listTypeName,
             elementTypeName,
             resolvedElementType,
             validatorPrefix,
@@ -1027,12 +1031,12 @@ class DslProcessor(
         // The block type of a child scope inherited from a generic base
         // carries the base's type parameters; expanding aliases and
         // substituting them resolves the receiver from the perspective of the
-        // analyzed interface. The shape checks read the expanded type because
+        // analyzed interface. The shape checks read the alias target because
         // substitution does not carry over the receiver and suspend markers.
-        val blockShape = checker.expandAliases(declaredBlockType)
+        val blockShape = checker.aliasTarget(declaredBlockType)
         val isReceiverStyle = blockShape.annotations.any { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }
         val isSuspend = blockShape.isSuspendFunctionType
-        val blockType = checker.substituteType(blockShape, environment)
+        val blockType = checker.substituteType(checker.expandAliases(declaredBlockType), environment)
         val arguments = blockType.arguments
         if ((!blockShape.isFunctionType && !isSuspend) || arguments.size != (if (isReceiverStyle) 2 else 1)) {
             checker.report(
@@ -1360,6 +1364,20 @@ class DslProcessor(
                 checker.sameType(first.blockReceiver, second.blockReceiver)
 
     /**
+     * Returns `true` when a supertype property of type [expectedType] can be
+     * overridden by the generated concrete result of [child]. The result class
+     * is generated in the same round, so its declared result supertype and its
+     * qualified name stand in for the class itself; the result is a non-null
+     * class, so `Any` accepts it.
+     */
+    private fun acceptsChildResult(expectedType: KSType, child: ChildSpec): Boolean {
+        val expectedName = expectedType.makeNotNullable().declaration.qualifiedName?.asString()
+        return expectedName == "kotlin.Any" ||
+                expectedName == child.resultQualifiedName ||
+                child.resultSupertype?.let { expectedType.isAssignableFrom(it) } == true
+    }
+
+    /**
      * Returns `true` when [function] declares the same Kotlin signature
      * as a generated [signature], so emitting the generated declaration
      * would produce conflicting overloads. Kotlin compares names and
@@ -1376,10 +1394,12 @@ class DslProcessor(
         for ((index, parameter) in signature.parameters.withIndex()) {
             if (!checker.sameType(function.parameters[index].type.resolve(), parameter)) return false
         }
-        val block = checker.expandAliases(function.parameters.last().type.resolve())
-        if (!block.isFunctionType || block.isSuspendFunctionType) return false
-        if (block.annotations.none { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }) return false
-        val blockArguments = block.arguments
+        val rawBlock = function.parameters.last().type.resolve()
+        val blockShape = checker.aliasTarget(rawBlock)
+        if (blockShape.isMarkedNullable) return false
+        if (!blockShape.isFunctionType || blockShape.isSuspendFunctionType) return false
+        if (blockShape.annotations.none { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }) return false
+        val blockArguments = checker.expandAliases(rawBlock).arguments
         if (blockArguments.size != 2) return false
         val blockReceiver = blockArguments[0].type?.resolve() ?: return false
         val blockReturnType = blockArguments[1].type?.resolve() ?: return false
@@ -1590,18 +1610,7 @@ class DslProcessor(
             while (pending.isNotEmpty()) {
                 val (current, environment, depth) = pending.removeFirst()
                 val name = current.qualifiedName?.asString() ?: continue
-                // The same declaration can be inherited through paths with
-                // different type arguments; erasing those arguments keys each
-                // instantiation apart while recursive inheritance still
-                // converges.
-                val visitKey = buildString {
-                    append(name)
-                    for (parameter in current.typeParameters) {
-                        append('|')
-                        environment[parameter]?.let { append(checker.erasureKey(it)) }
-                    }
-                }
-                if (!visited.add(visitKey)) continue
+                if (!visited.add(name)) continue
                 for (member in current.declarations) visit(member, environment, depth)
                 for (superType in current.superTypes) {
                     val resolved = checker.expandAliases(superType.resolve())
@@ -1739,6 +1748,24 @@ class DslProcessor(
             return if (type.isMarkedNullable) current.makeNullable() else current
         }
 
+        /**
+         * Resolves the alias chain of [type] to the underlying type reference
+         * without substituting the alias's type arguments. Substitution rebuilds
+         * composite types and drops the compiler's function-type markers, so
+         * shape checks read the receiver and suspend markers from this type.
+         */
+        fun aliasTarget(type: KSType): KSType {
+            var current = type
+            val visited = mutableSetOf<String>()
+            while (!current.isError) {
+                val alias = current.declaration as? KSTypeAlias ?: break
+                val aliasName = alias.qualifiedName?.asString() ?: break
+                if (!visited.add(aliasName)) break
+                current = alias.type.resolve()
+            }
+            return if (type.isMarkedNullable) current.makeNullable() else current
+        }
+
         /** Returns the immutable list type generated for a list result property. */
         fun immutableListType(elementType: KSType): KSType? {
             val declaration = resolver.getClassDeclarationByName(
@@ -1778,13 +1805,14 @@ class DslProcessor(
                 return null
             }
             return try {
-                val isFunction = resolved.isFunctionType || resolved.isSuspendFunctionType
+                val shape = aliasTarget(type)
+                val isFunction = shape.isFunctionType || shape.isSuspendFunctionType
                 val rendered = if (isFunction) {
-                    lambdaTypeName(symbol, resolved)
+                    lambdaTypeName(symbol, resolved, shape)
                 } else {
                     resolved.toTypeName()
                 }
-                rendered.annotated(listOf(type, resolved), ignoreExtensionMarker = isFunction)
+                rendered.annotated(listOf(type, resolved, shape), ignoreExtensionMarker = isFunction)
             } catch (_: Exception) {
                 report(symbol, "The type of ${symbolDescription(symbol)} is unsupported.")
                 null
@@ -1795,11 +1823,13 @@ class DslProcessor(
          * Renders a function type as a lambda so that the suspend modifier, the
          * extension receiver and the nullability survive rendering; parameters
          * stay unnamed because their names live in compiler annotations that
-         * generic substitution does not carry over.
+         * generic substitution does not carry over. [shape] is the alias-resolved
+         * type that carries the receiver and suspend markers dropped by
+         * substitution.
          */
-        private fun lambdaTypeName(symbol: KSNode, type: KSType): TypeName {
+        private fun lambdaTypeName(symbol: KSNode, type: KSType, shape: KSType): TypeName {
             val arguments = type.arguments
-            val isExtension = type.annotations.any { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }
+            val isExtension = shape.annotations.any { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }
             val receiver = if (isExtension) {
                 arguments.firstOrNull()?.type?.resolve()?.let { renderTypeName(symbol, it) }
             } else {
@@ -1820,7 +1850,7 @@ class DslProcessor(
                 ?.let { renderTypeName(symbol, it) }
                 ?: UNIT
             return LambdaTypeName.get(receiver = receiver, parameters = parameters, returnType = returnType)
-                .copy(nullable = type.isMarkedNullable, suspending = type.isSuspendFunctionType)
+                .copy(nullable = type.isMarkedNullable, suspending = shape.isSuspendFunctionType)
         }
 
         /**
@@ -2219,6 +2249,7 @@ class DslProcessor(
 
     private class ListProperty(
         val name: String,
+        val typeName: TypeName,
         val elementTypeName: TypeName,
         val elementType: KSType,
         val validator: String?,
