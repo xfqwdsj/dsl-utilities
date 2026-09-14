@@ -540,3 +540,42 @@ interface EventContainerDsl {
     @DslChild
     fun child(block: TransientEventDsl.() -> Unit = {})
 }
+
+typealias AliasedGenericChildBlock<R> = TransientEventDsl.() -> R
+
+@DslBuilder
+interface GenericAliasedChildScopeDsl {
+    @DslChild
+    fun genericAliasedChild(block: AliasedGenericChildBlock<Unit>)
+}
+
+@DslBuilder
+interface PlainChildDsl {
+    @DslValue(initial = "plain")
+    var value: String
+}
+
+interface AnyChildHolder {
+    val child: Any
+}
+
+@DslBuilder(supertype = AnyChildHolder::class, resultName = "AnyChildHolderResult")
+interface AnyChildHolderDsl {
+    @DslChild
+    fun child(block: PlainChildDsl.() -> Unit = {})
+}
+
+@DslBuilder
+interface NullableBlockSpecDsl
+
+@Suppress("UNUSED_PARAMETER")
+fun buildNullableBlockSpec(block: (NullableBlockSpecDsl.() -> Unit)?) {
+}
+
+typealias MarkedIntListAlias = @MaxBytes(5) MutableList<Int>
+
+@DslBuilder
+interface AliasedMarkedIntsDsl {
+    @DslList
+    var values: MarkedIntListAlias
+}

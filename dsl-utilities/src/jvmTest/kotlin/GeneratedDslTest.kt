@@ -579,4 +579,46 @@ class AliasHandlingTest {
 
         assertEquals(0.25f, container.child.intensity)
     }
+
+    @Test
+    fun `generic function type aliases bind the child receiver`() {
+        val result = buildGenericAliasedChildScope {
+            genericAliasedChild { intensity = 0.75f }
+        }
+
+        assertEquals(0.75f, result.genericAliasedChild.intensity)
+    }
+
+    @Test
+    fun `child scope results override Any supertype properties`() {
+        val holder = buildAnyChildHolder {
+            child { value = "changed" }
+        }
+
+        assertEquals("changed", holder.child.value)
+    }
+
+    @Test
+    fun `nullable block overloads coexist with generated functions`() {
+        val generated: (NullableBlockSpecDsl.() -> Unit) -> NullableBlockSpec = ::buildNullableBlockSpec
+        val direct: ((NullableBlockSpecDsl.() -> Unit)?) -> Unit = ::buildNullableBlockSpec
+
+        assertNotNull(generated { })
+        direct(null)
+    }
+
+    @Test
+    fun `list container type-use annotations are preserved`() {
+        val builder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "AliasedMarkedIntsDslBuilder.kt" }
+        assertNotNull(builder, "AliasedMarkedIntsDslBuilder.kt was not generated")
+        assertTrue(builder.readText().contains("@MaxBytes"), "the list container annotation was dropped")
+
+        val result = buildAliasedMarkedInts {
+            values.add(1)
+        }
+
+        assertEquals(listOf(1), result.values)
+    }
 }
