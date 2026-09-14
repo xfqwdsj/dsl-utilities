@@ -484,3 +484,59 @@ interface ConcreteBackingDsl : ConcreteBackingName {
     @DslValue(initial = "name")
     var name: String
 }
+
+typealias AliasedTransientBlock = TransientEventDsl.() -> Unit
+typealias AliasedUnit = Unit
+typealias AliasedMarkedString = String
+typealias AliasedIntList = MutableList<Int>
+typealias AliasedValidator = NonBlankValidator
+typealias AliasedBase = BaseDsl
+
+@DslBuilder
+interface AliasedChildScopeDsl {
+    @DslChild
+    fun aliasedChild(block: AliasedTransientBlock)
+
+    @DslChild
+    fun aliasedUnitChild(block: TransientEventDsl.() -> AliasedUnit = {})
+}
+
+@DslBuilder
+interface AliasedAnnotationDsl {
+    val marked: @MaxBytes(3) AliasedMarkedString
+}
+
+@DslBuilder
+interface AliasedListDsl {
+    @DslList
+    var values: AliasedIntList
+}
+
+@DslBuilder
+interface AliasedValueDsl {
+    @DslValue(initial = "alias", validator = AliasedValidator::class)
+    var value: AliasedMarkedString
+}
+
+@DslBuilder
+interface AliasedInheritanceDsl : AliasedBase {
+    @DslValue(initial = "alias-own")
+    var aliasOwn: String
+}
+
+@DslBuilder
+interface OverloadSpecDsl
+
+fun buildOverloadSpec(block: (Int) -> Unit) {
+    block(0)
+}
+
+interface EventContainer {
+    val child: SampleEvent
+}
+
+@DslBuilder(supertype = EventContainer::class, resultName = "EventContainerResult")
+interface EventContainerDsl {
+    @DslChild
+    fun child(block: TransientEventDsl.() -> Unit = {})
+}

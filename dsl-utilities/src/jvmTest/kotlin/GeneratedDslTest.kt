@@ -505,3 +505,78 @@ class GenerationEdgeCaseTest {
         assertEquals("name", builder.build().name)
     }
 }
+
+class AliasHandlingTest {
+    @Test
+    fun `function type aliases bind the child receiver`() {
+        val result = buildAliasedChildScope {
+            aliasedChild { intensity = 0.5f }
+            aliasedUnitChild { sharpness = 1f }
+        }
+
+        assertEquals(0.5f, result.aliasedChild.intensity)
+        assertEquals(1f, result.aliasedUnitChild.sharpness)
+    }
+
+    @Test
+    fun `type-use annotations survive alias expansion`() {
+        val builder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "AliasedAnnotationDslBuilder.kt" }
+        assertNotNull(builder, "AliasedAnnotationDslBuilder.kt was not generated")
+        assertTrue(builder.readText().contains("@MaxBytes"), "the alias usage annotation was dropped")
+
+        val result = buildAliasedAnnotation(marked = "ok")
+
+        assertEquals("ok", result.marked)
+    }
+
+    @Test
+    fun `aliased list and value properties are supported`() {
+        val list = buildAliasedList {
+            values.add(1)
+            values.add(2)
+        }
+        val value = buildAliasedValue()
+
+        assertEquals(listOf(1, 2), list.values)
+        assertEquals("alias", value.value)
+        assertFailsWith<IllegalArgumentException> {
+            buildAliasedValue { this.value = " " }
+        }
+    }
+
+    @Test
+    fun `aliased supertypes contribute their members`() {
+        val builder = AliasedInheritanceDslBuilder(extra = 5)
+        assertEquals(7, builder.defaulted)
+
+        val inherited = builder.apply {
+            aliasOwn = "own"
+        }.build()
+
+        assertEquals(5, inherited.extra)
+        assertEquals("base", inherited.base)
+        assertEquals("own", inherited.aliasOwn)
+    }
+
+    @Test
+    fun `same-erasure overloads with different signatures coexist`() {
+        val generated: (OverloadSpecDsl.() -> Unit) -> OverloadSpec = ::buildOverloadSpec
+        val direct: ((Int) -> Unit) -> Unit = ::buildOverloadSpec
+
+        assertNotNull(generated { })
+        var seen = -1
+        direct { seen = it }
+        assertEquals(0, seen)
+    }
+
+    @Test
+    fun `child scope results override covariant supertype properties`() {
+        val container = buildEventContainer {
+            child { intensity = 0.25f }
+        }
+
+        assertEquals(0.25f, container.child.intensity)
+    }
+}
