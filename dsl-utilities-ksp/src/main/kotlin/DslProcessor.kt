@@ -1,5 +1,6 @@
 package top.ltfan.dslutilities.ksp
 
+import com.google.devtools.ksp.KspExperimental
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 import com.google.devtools.ksp.validate
@@ -26,6 +27,7 @@ class DslProcessor(
 
     private val generatedTypeOwners = mutableMapOf<String, String>()
     private val generatedFunctionOwners = mutableMapOf<String, String>()
+    private val generatedPropertyOwners = mutableMapOf<String, String>()
 
     override fun process(resolver: Resolver): List<KSAnnotated> {
         val deferred = mutableListOf<KSAnnotated>()
@@ -179,7 +181,7 @@ class DslProcessor(
 
         if (!checker.valid) return handled(checker)
 
-        val resultSupertype = resolveResultSupertype(spec, annotation, checker)
+        val resultSupertype = resolveResultSupertype(spec, annotation, checker, checkSubclassing = true)
         if (!checker.valid) return handled(checker)
         val supertypeTypeName = resultSupertype?.typeName
         val supertypeOverrides = mutableSetOf<String>()
@@ -279,6 +281,7 @@ class DslProcessor(
             packageName,
             specQualifiedName,
             requiredProperties,
+            listProperties,
             checker,
         )
         if (!checker.valid) return handled(checker)
@@ -749,17 +752,6 @@ class DslProcessor(
     private fun classNameOf(qualifiedName: String): ClassName = ClassName.bestGuess(qualifiedName)
 
     /**
-     * Approximates the JVM declaration shape used to reject generated overload
-     * clashes.
-     */
-    private fun erasureKey(typeName: TypeName): String = when (typeName) {
-        is ClassName -> typeName.canonicalName
-        is ParameterizedTypeName -> typeName.rawType.canonicalName
-        is LambdaTypeName -> "kotlin.Function${typeName.parameters.size + if (typeName.receiver == null) 0 else 1}"
-        else -> typeName.toString().substringBefore('<').removeSuffix("?")
-    }
-
-    /**
      * Copies [TypeName] through its base declaration, keeping defaults for the
      * other arguments.
      */
@@ -889,7 +881,22 @@ class DslProcessor(
             )
             return null
         }
-        val elementType = type.arguments.single().type?.resolve() ?: run {
+        if (type.isMarkedNullable) {
+            checker.report(
+                property,
+                "@DslList property $name must not be nullable; the generated list is always present."
+            )
+            return null
+        }
+        val argument = type.arguments.single()
+        if (argument.variance != Variance.INVARIANT) {
+            checker.report(
+                property,
+                "@DslList property $name must not use a use-site projection; declare MutableList of the element type."
+            )
+            return null
+        }
+        val elementType = argument.type?.resolve() ?: run {
             checker.report(property, "Property $name has an unsupported element type.")
             return null
         }
@@ -1111,7 +1118,7 @@ class DslProcessor(
         val packageName = declaration.packageName.asString()
         fun qualify(name: String): String = if (packageName.isEmpty()) name else "$packageName.$name"
         val builderVisibility = effectiveVisibility(declaration, checker) ?: return null
-        val resultSupertype = resolveResultSupertype(declaration, annotation, checker)
+        val resultSupertype = resolveResultSupertype(declaration, annotation, checker, checkSubclassing = false)
         if (!checker.valid) return null
         val resultVisibility = restrictiveVisibility(listOfNotNull(builderVisibility, resultSupertype?.visibility))
         if (resultVisibility == KModifier.INTERNAL && declaration.containingFile == null) {
@@ -1152,6 +1159,7 @@ class DslProcessor(
         spec: KSClassDeclaration,
         annotation: KSAnnotation?,
         checker: Checker,
+        checkSubclassing: Boolean,
     ): ResultSupertype? {
         val specName = spec.simpleName.asString()
         val type = annotation?.type("supertype")
@@ -1170,6 +1178,20 @@ class DslProcessor(
             checker.report(spec, "@DslBuilder.supertype of $specName must not be generic.")
             return null
         }
+        // Kotlin requires direct subclasses of a sealed type to live in the
+        // same package and module as the sealed declaration; the generated
+        // result is emitted in the specification's package and module.
+        if (checkSubclassing && Modifier.SEALED in declaration.modifiers) {
+            val samePackage = declaration.packageName.asString() == spec.packageName.asString()
+            val sameModule = declaration.containingFile != null
+            if (!samePackage || !sameModule) {
+                checker.report(
+                    spec,
+                    "@DslBuilder.supertype of $specName is a sealed interface, so the generated result must be in its package and module."
+                )
+                return null
+            }
+        }
         val typeName = checker.renderTypeName(spec, type) ?: return null
         val visibility = effectiveVisibility(declaration, checker) ?: return null
         return ResultSupertype(type, declaration, typeName, visibility)
@@ -1181,8 +1203,12 @@ class DslProcessor(
     /**
      * Reports generated declaration collisions before opening an output file,
      * keeping invalid custom or derived names as KSP diagnostics instead of
-     * file-creation failures or later redeclaration errors.
+     * file-creation failures or later redeclaration errors. Declarations
+     * already present in the specification's package are reserved as well,
+     * because generated functions and extension properties share the
+     * package-level scope with them.
      */
+    @OptIn(KspExperimental::class)
     private fun reserveGeneratedNames(
         spec: KSClassDeclaration,
         resolver: Resolver,
@@ -1190,6 +1216,7 @@ class DslProcessor(
         packageName: String,
         specQualifiedName: String,
         requiredProperties: List<RequiredProperty>,
+        listProperties: List<ListProperty>,
         checker: Checker,
     ) {
         fun qualified(name: String): String = if (packageName.isEmpty()) name else "$packageName.$name"
@@ -1208,24 +1235,35 @@ class DslProcessor(
             }
         }
 
-        var functionKey: String? = null
-        if (names.generateFunction) {
-            val parameterTypes = requiredProperties.map { it.typeName } +
-                    LambdaTypeName.get(receiver = classNameOf(specQualifiedName), returnType = UNIT)
-            val qualifiedName = qualified(names.functionName)
-            val parameterErasures = parameterTypes.map(::erasureKey)
-            functionKey = "$qualifiedName(${parameterErasures.joinToString()})"
+        // An extension receiver joins the JVM parameter list, so the receiver
+        // is part of the erased signature a generated function is compared
+        // against.
+        val trailingLambdaErasure = "kotlin.Function1"
+        fun erasedParameters(function: KSFunctionDeclaration): List<String> =
+            (function.extensionReceiver?.resolve()?.let { listOf(checker.erasureKey(it)) } ?: emptyList()) +
+                    function.parameters.map { checker.erasureKey(it.type.resolve()) }
+
+        var packageDeclarations: List<KSDeclaration>? = null
+        fun declarationsInPackage(): List<KSDeclaration> {
+            packageDeclarations?.let { return it }
+            val loaded = resolver.getDeclarationsFromPackage(packageName).toList()
+            packageDeclarations = loaded
+            return loaded
+        }
+
+        val functionKeys = mutableListOf<String>()
+        fun reserveFunction(name: String, parameters: List<String>) {
+            val qualifiedName = qualified(name)
+            val key = "$qualifiedName(${parameters.joinToString()})"
             val existing = resolver.getFunctionDeclarationsByName(
                 resolver.getKSNameFromString(qualifiedName),
                 includeTopLevel = true,
             ).any { function ->
                 function.parentDeclaration == null &&
                         function.packageName.asString() == packageName &&
-                        function.parameters.map { parameter ->
-                            checker.erasureKey(parameter.type.resolve())
-                        } == parameterErasures
+                        erasedParameters(function) == parameters
             }
-            val reservedBy = generatedFunctionOwners[functionKey]
+            val reservedBy = generatedFunctionOwners[key]
             when {
                 existing ->
                     checker.report(spec, "Generated function $qualifiedName conflicts with an existing declaration.")
@@ -1233,11 +1271,54 @@ class DslProcessor(
                 reservedBy != null && reservedBy != owner ->
                     checker.report(spec, "Generated function $qualifiedName is also produced by $reservedBy.")
             }
+            functionKeys += key
+        }
+
+        if (names.generateFunction) {
+            reserveFunction(
+                names.functionName,
+                requiredProperties.map { checker.erasureKey(it.type) } + trailingLambdaErasure,
+            )
+        }
+        for (property in listProperties) {
+            for (child in property.children) {
+                reserveFunction(
+                    child.functionName,
+                    listOf(specQualifiedName) +
+                            child.required.map { checker.erasureKey(it.type) } +
+                            trailingLambdaErasure,
+                )
+                if (child.required.isEmpty() && !child.requiresConfiguration) {
+                    val shorthandKey = "$specQualifiedName.${child.functionName}"
+                    val existing = declarationsInPackage().any { declaration ->
+                        declaration is KSPropertyDeclaration &&
+                                declaration.parentDeclaration == null &&
+                                declaration.simpleName.asString() == child.functionName &&
+                                declaration.extensionReceiver?.resolve()
+                                    ?.let { checker.erasureKey(it) } == specQualifiedName
+                    }
+                    val reservedBy = generatedPropertyOwners[shorthandKey]
+                    when {
+                        existing ->
+                            checker.report(
+                                spec,
+                                "Generated extension property ${child.functionName} conflicts with an existing declaration."
+                            )
+
+                        reservedBy != null && reservedBy != owner ->
+                            checker.report(
+                                spec,
+                                "Generated extension property ${child.functionName} is also produced by $reservedBy."
+                            )
+                    }
+                    if (checker.valid) generatedPropertyOwners[shorthandKey] = owner
+                }
+            }
         }
 
         if (!checker.valid) return
         for (name in typeNames) generatedTypeOwners[qualified(name)] = owner
-        if (functionKey != null) generatedFunctionOwners[functionKey] = owner
+        for (key in functionKeys) generatedFunctionOwners[key] = owner
     }
 
     /**
