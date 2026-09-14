@@ -184,6 +184,9 @@ class DslProcessor(
 
             supertypeType != null && supertypeDeclaration?.classKind != ClassKind.INTERFACE ->
                 checker.report(spec, "@DslBuilder.supertype of $specName must be an interface.")
+
+            supertypeDeclaration?.typeParameters?.isNotEmpty() == true ->
+                checker.report(spec, "@DslBuilder.supertype of $specName must not be generic.")
         }
         val supertypeTypeName = supertypeType?.let { checker.renderTypeName(spec, it) }
         if (!checker.valid) return handled(checker)
@@ -217,7 +220,8 @@ class DslProcessor(
                 val resolvedProvided = resolvedResultPropertyTypes[name]
                 val compatible = provided == rendered ||
                         resolvedProvided?.let(expectedType::isAssignableFrom) == true ||
-                        expectedType.makeNotNullable().declaration.qualifiedName?.asString() == "kotlin.Any"
+                        (expectedType.makeNotNullable().declaration.qualifiedName?.asString() == "kotlin.Any" &&
+                                (expectedType.isMarkedNullable || resolvedProvided?.isMarkedNullable == false))
                 when {
                     // Result properties are read-only constructor values: a
                     // mutable supertype member can never be overridden by one,
@@ -372,7 +376,7 @@ class DslProcessor(
             // primary constructor.
             builder.addProperty(
                 PropertySpec.builder(property.name, property.typeName, KModifier.OVERRIDE)
-                    .initializer(property.name)
+                    .initializer("%N", property.name)
                     .build()
             )
         }
@@ -592,7 +596,7 @@ class DslProcessor(
             if (name in overrides) modifiers += KModifier.OVERRIDE
             builder.addProperty(
                 PropertySpec.builder(name, typeName, *modifiers.toTypedArray())
-                    .initializer(name)
+                    .initializer("%N", name)
                     .build()
             )
         }

@@ -403,6 +403,13 @@ class GenerationEdgeCaseTest {
     }
 
     @Test
+    fun `nullable result properties override nullable Any properties`() {
+        val result = buildNullableStringValue(value = null)
+
+        assertNull(result.value)
+    }
+
+    @Test
     fun `required block names do not collide with configuration lambdas`() {
         val list = buildBlockList {
             blockChild(block = "list")

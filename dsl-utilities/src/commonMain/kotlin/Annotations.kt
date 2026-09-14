@@ -31,11 +31,11 @@ import kotlin.reflect.KClass
  * [resultName], [builderName], and [functionName] override these names,
  * and [generateFunction] controls whether the build function is generated.
  *
- * @param supertype The interface implemented by the generated result
- *   class. Declaring a supertype lets several result classes be collected
- *   in one list of the supertype, for example as the element type of a
- *   [DslList] property whose [DslList.children] build those result
- *   classes. When unset, the result class implements no additional
+ * @param supertype The non-generic interface implemented by the generated
+ *   result class. Declaring a supertype lets several result classes be
+ *   collected in one list of the supertype, for example as the element
+ *   type of a [DslList] property whose [DslList.children] build those
+ *   result classes. When unset, the result class implements no additional
  *   interface.
  * @param resultName The name of the generated result class. When empty,
  *   the name is derived from the annotated interface.

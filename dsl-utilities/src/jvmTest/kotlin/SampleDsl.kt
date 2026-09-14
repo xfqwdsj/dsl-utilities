@@ -350,6 +350,15 @@ interface CovariantResultDsl {
     val name: String
 }
 
+interface NullableAnyValue {
+    val value: Any?
+}
+
+@DslBuilder(supertype = NullableAnyValue::class)
+interface NullableStringValueDsl {
+    val value: String?
+}
+
 interface BlockItem
 
 @DslBuilder(supertype = BlockItem::class)
