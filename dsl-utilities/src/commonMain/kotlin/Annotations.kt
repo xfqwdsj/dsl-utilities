@@ -30,6 +30,8 @@ import kotlin.reflect.KClass
  * build function is named `build` followed by the result class name.
  * [resultName], [builderName], and [functionName] override these names,
  * and [generateFunction] controls whether the build function is generated.
+ * Generic base interfaces must use concrete type arguments; star-projected
+ * inherited members cannot be represented by the generated declarations.
  *
  * @param supertype The non-generic interface implemented by the generated
  *   result class. Declaring a supertype lets several result classes be
@@ -95,8 +97,9 @@ public annotation class DslValue(
  *   child, whose parameters carry the required properties of the child and
  *   whose optional trailing block configures the child; the function
  *   builds the child value and adds it to the list. A child whose
- *   properties all have values also receives a property shorthand that
- *   adds a child built with the default configuration.
+ *   properties all have values and that has no required child scopes also
+ *   receives a property shorthand that adds a child built with the default
+ *   configuration.
  * @param validator A [DslValidator] object or class applied to each
  *   element in the generated `build` function. When unset, every element
  *   is accepted.

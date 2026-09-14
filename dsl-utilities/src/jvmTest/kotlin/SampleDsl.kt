@@ -304,6 +304,14 @@ interface GenericChildBase<T> {
 @DslBuilder
 interface GenericChildScopeDsl : GenericChildBase<TransientEventDsl>
 
+interface GenericChildReturnBase<R> {
+    @DslChild
+    fun child(block: TransientEventDsl.() -> Unit): R
+}
+
+@DslBuilder
+interface GenericUnitChildReturnDsl : GenericChildReturnBase<Unit>
+
 interface NullableGenericBase<T> {
     val nullableValue: T?
 }
@@ -387,6 +395,51 @@ internal interface InternalListChildDsl {
 @DslBuilder
 interface PublicInternalChildListDsl {
     @DslList(children = [InternalListChildDsl::class])
+    var items: MutableList<Any>
+}
+
+internal interface InternalChildResult {
+    val value: String
+}
+
+@DslBuilder(supertype = InternalChildResult::class)
+interface PublicInternalResultChildDsl {
+    @DslValue(initial = "internal-result")
+    var value: String
+}
+
+@DslBuilder
+interface PublicInternalResultListDsl {
+    @DslList(children = [PublicInternalResultChildDsl::class])
+    var items: MutableList<Any>
+}
+
+@DslBuilder
+interface PublicInternalResultScopeDsl {
+    @DslChild
+    fun child(block: PublicInternalResultChildDsl.() -> Unit = {})
+}
+
+interface WideDiamondProperty {
+    val value: CharSequence
+}
+
+interface NarrowDiamondProperty {
+    val value: String
+}
+
+@DslBuilder
+interface DiamondPropertyDsl : WideDiamondProperty, NarrowDiamondProperty
+
+@DslBuilder
+interface RequiredNestedChildDsl {
+    @DslChild
+    fun event(block: TransientEventDsl.() -> Unit = {})
+}
+
+@DslBuilder
+interface RequiredNestedListDsl {
+    @DslList(children = [RequiredNestedChildDsl::class])
     var items: MutableList<Any>
 }
 

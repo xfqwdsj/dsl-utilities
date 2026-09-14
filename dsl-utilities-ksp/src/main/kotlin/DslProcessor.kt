@@ -24,6 +24,9 @@ class DslProcessor(
     private val logger: KSPLogger,
 ) : SymbolProcessor {
 
+    private val generatedTypeOwners = mutableMapOf<String, String>()
+    private val generatedFunctionOwners = mutableMapOf<String, String>()
+
     override fun process(resolver: Resolver): List<KSAnnotated> {
         val deferred = mutableListOf<KSAnnotated>()
         for (symbol in resolver.getSymbolsWithAnnotation("top.ltfan.dslutilities.DslBuilder")) {
@@ -91,7 +94,8 @@ class DslProcessor(
         val listProperties = mutableListOf<ListProperty>()
         val childScopes = mutableListOf<ChildScope>()
         val hierarchy = Hierarchy(checker)
-        for (member in hierarchy.abstractProperties(spec)) {
+        val specProperties = hierarchy.allProperties(spec)
+        for (member in specProperties.filter { hierarchy.isAbstract(it.declaration) }) {
             val property = member.declaration
             val name = property.simpleName.asString()
             val type = checker.substituteType(property.type.resolve(), member.environment)
@@ -153,7 +157,7 @@ class DslProcessor(
         }
 
         val memberNames = hierarchy.functionNames(spec) +
-                hierarchy.allProperties(spec).map { it.declaration.simpleName.asString() }
+                specProperties.map { it.declaration.simpleName.asString() }
         val childOwners = mutableMapOf<String, String>()
         for (property in listProperties) {
             for (child in property.children) {
@@ -175,23 +179,10 @@ class DslProcessor(
 
         if (!checker.valid) return handled(checker)
 
-        val supertypeType =
-            annotation?.type("supertype")?.takeIf { it.declaration.qualifiedName?.asString() != "kotlin.Unit" }
-        val supertypeDeclaration = supertypeType?.declaration as? KSClassDeclaration
-        when {
-            supertypeType?.isError == true ->
-                checker.reportUnresolved(spec, "@DslBuilder.supertype of $specName is not resolvable yet.")
-
-            supertypeType != null && supertypeDeclaration?.classKind != ClassKind.INTERFACE ->
-                checker.report(spec, "@DslBuilder.supertype of $specName must be an interface.")
-
-            supertypeDeclaration?.typeParameters?.isNotEmpty() == true ->
-                checker.report(spec, "@DslBuilder.supertype of $specName must not be generic.")
-        }
-        val supertypeTypeName = supertypeType?.let { checker.renderTypeName(spec, it) }
+        val resultSupertype = resolveResultSupertype(spec, annotation, checker)
         if (!checker.valid) return handled(checker)
+        val supertypeTypeName = resultSupertype?.typeName
         val supertypeOverrides = mutableSetOf<String>()
-        var supertypeInternal = false
         val resultProperties = requiredProperties.map { it.name to it.typeName } +
                 valueProperties.map { it.name to it.typeName } +
                 listProperties.map { it.name to LIST.parameterizedBy(it.elementTypeName) } +
@@ -202,16 +193,10 @@ class DslProcessor(
             for (property in listProperties) put(property.name, checker.immutableListType(property.elementType))
             for (property in childScopes) put(property.name, property.child.resultSupertype)
         }
-        if (supertypeDeclaration != null && supertypeTypeName != null) {
-            supertypeInternal = effectiveVisibility(supertypeDeclaration, checker) == KModifier.INTERNAL
+        if (resultSupertype != null) {
+            val supertypeDeclaration = resultSupertype.declaration
             val resultPropertyTypes = resultProperties.toMap()
-            val environment = supertypeDeclaration.typeParameters.zip(supertypeType.arguments)
-                .mapNotNull { (parameter, argument) ->
-                    val argumentType = argument.type?.resolve() ?: return@mapNotNull null
-                    parameter to checker.substituteType(argumentType, emptyMap())
-                }
-                .toMap()
-            for (member in hierarchy.allProperties(supertypeDeclaration, environment)) {
+            for (member in hierarchy.allProperties(supertypeDeclaration)) {
                 val property = member.declaration
                 val name = property.simpleName.asString()
                 val expectedType = checker.substituteType(property.type.resolve(), member.environment)
@@ -262,10 +247,15 @@ class DslProcessor(
             }
         }
         if (!checker.valid) return handled(checker)
-        val resultVisibility =
-            if (visibility == KModifier.INTERNAL || supertypeInternal) KModifier.INTERNAL else KModifier.PUBLIC
+        val resultVisibility = restrictiveVisibility(
+            listOfNotNull(
+                visibility,
+                resultSupertype?.visibility,
+                *childScopes.map { it.child.resultVisibility }.toTypedArray(),
+            )
+        )
 
-        val reservedBackingNames = hierarchy.allProperties(spec)
+        val reservedBackingNames = specProperties
             .mapTo(mutableSetOf()) { it.declaration.simpleName.asString() }
         for (property in valueProperties) {
             property.fieldName = availableName("${property.name}Field", reservedBackingNames)
@@ -282,6 +272,16 @@ class DslProcessor(
 
         val builderTypeName = ClassName(packageName, names.builderName)
         val resultTypeName = ClassName(packageName, names.resultName)
+        reserveGeneratedNames(
+            spec,
+            resolver,
+            names,
+            packageName,
+            specQualifiedName,
+            requiredProperties,
+            checker,
+        )
+        if (!checker.valid) return handled(checker)
         val builderType = builderType(
             specQualifiedName,
             builderTypeName,
@@ -619,12 +619,9 @@ class DslProcessor(
             for (child in property.children) {
                 val blockName = availableName("block", child.required.map { it.name })
                 val arguments = requiredArguments(child.required)
-                val visibility =
-                    if (parentVisibility == KModifier.INTERNAL || child.visibility == KModifier.INTERNAL) {
-                        KModifier.INTERNAL
-                    } else {
-                        KModifier.PUBLIC
-                    }
+                val visibility = restrictiveVisibility(
+                    listOf(parentVisibility, child.builderVisibility, child.resultVisibility)
+                )
                 functions += FunSpec.builder(child.functionName)
                     .addModifiers(visibility, KModifier.INLINE)
                     .receiver(classNameOf(specQualifiedName))
@@ -639,7 +636,9 @@ class DslProcessor(
                                 returnType = UNIT,
                             ),
                         )
-                            .defaultValue("{}")
+                            .apply {
+                                if (!child.requiresConfiguration) defaultValue("{}")
+                            }
                             .build()
                     )
                     .addStatement(
@@ -650,7 +649,7 @@ class DslProcessor(
                         blockName,
                     )
                     .build()
-                if (child.required.isEmpty()) {
+                if (child.required.isEmpty() && !child.requiresConfiguration) {
                     shorthands += PropertySpec.builder(child.functionName, UNIT)
                         .addModifiers(visibility)
                         .receiver(classNameOf(specQualifiedName))
@@ -748,6 +747,17 @@ class DslProcessor(
      * without package-level ambiguity.
      */
     private fun classNameOf(qualifiedName: String): ClassName = ClassName.bestGuess(qualifiedName)
+
+    /**
+     * Approximates the JVM declaration shape used to reject generated overload
+     * clashes.
+     */
+    private fun erasureKey(typeName: TypeName): String = when (typeName) {
+        is ClassName -> typeName.canonicalName
+        is ParameterizedTypeName -> typeName.rawType.canonicalName
+        is LambdaTypeName -> "kotlin.Function${typeName.parameters.size + if (typeName.receiver == null) 0 else 1}"
+        else -> typeName.toString().substringBefore('<').removeSuffix("?")
+    }
 
     /**
      * Copies [TypeName] through its base declaration, keeping defaults for the
@@ -953,6 +963,7 @@ class DslProcessor(
             return null
         }
         val functionReturnType = function.returnType?.resolve()
+            ?.let { checker.substituteType(it, environment) }
         if (functionReturnType?.isError == true) {
             checker.reportUnresolved(function, "The return type of @DslChild function $name is not resolvable yet.")
             return null
@@ -1085,6 +1096,13 @@ class DslProcessor(
             )
             return null
         }
+        if (declaration.typeParameters.isNotEmpty()) {
+            checker.report(
+                declaration,
+                "Child DslBuilder interface $specName must not declare type parameters."
+            )
+            return null
+        }
         val specQualifiedName = declaration.qualifiedName?.asString() ?: run {
             checker.report(declaration, "Child $specName has no qualified name.")
             return null
@@ -1092,15 +1110,20 @@ class DslProcessor(
         val names = Names.of(specName, annotation)
         val packageName = declaration.packageName.asString()
         fun qualify(name: String): String = if (packageName.isEmpty()) name else "$packageName.$name"
-        val visibility = effectiveVisibility(declaration, checker) ?: return null
-        val resultSupertype = annotation.type("supertype")
-            ?.takeIf { it.declaration.qualifiedName?.asString() != "kotlin.Unit" }
-        if (resultSupertype?.isError == true) {
-            checker.reportUnresolved(declaration, "The result supertype of child $specName is not resolvable yet.")
+        val builderVisibility = effectiveVisibility(declaration, checker) ?: return null
+        val resultSupertype = resolveResultSupertype(declaration, annotation, checker)
+        if (!checker.valid) return null
+        val resultVisibility = restrictiveVisibility(listOfNotNull(builderVisibility, resultSupertype?.visibility))
+        if (resultVisibility == KModifier.INTERNAL && declaration.containingFile == null) {
+            checker.report(
+                declaration,
+                "Child $specName has an internal generated result that is not accessible from this module."
+            )
             return null
         }
+        val hierarchy = Hierarchy(checker)
         val required = mutableListOf<RequiredProperty>()
-        for (member in Hierarchy(checker).abstractProperties(declaration)) {
+        for (member in hierarchy.allProperties(declaration).filter { hierarchy.isAbstract(it.declaration) }) {
             val property = member.declaration
             if (property.isMutable) continue
             val type = checker.substituteType(property.type.resolve(), member.environment)
@@ -1111,11 +1134,110 @@ class DslProcessor(
             functionName = decapitalize(specName.removeSuffix("Dsl").takeIf { it.isNotEmpty() } ?: specName),
             builderQualifiedName = qualify(names.builderName),
             resultQualifiedName = qualify(names.resultName),
-            resultSupertype = resultSupertype,
-            visibility = visibility,
+            resultSupertype = resultSupertype?.type,
+            builderVisibility = builderVisibility,
+            resultVisibility = resultVisibility,
             specQualifiedName = specQualifiedName,
             required = required,
+            requiresConfiguration = hierarchy.abstractFunctions(declaration)
+                .any { it.declaration.annotation(DSL_CHILD_ANNOTATION) != null },
         )
+    }
+
+    /**
+     * Resolves and validates the optional interface implemented by a generated
+     * result.
+     */
+    private fun resolveResultSupertype(
+        spec: KSClassDeclaration,
+        annotation: KSAnnotation?,
+        checker: Checker,
+    ): ResultSupertype? {
+        val specName = spec.simpleName.asString()
+        val type = annotation?.type("supertype")
+            ?.takeIf { it.declaration.qualifiedName?.asString() != "kotlin.Unit" }
+            ?: return null
+        if (type.isError) {
+            checker.reportUnresolved(spec, "@DslBuilder.supertype of $specName is not resolvable yet.")
+            return null
+        }
+        val declaration = type.declaration as? KSClassDeclaration
+        if (declaration?.classKind != ClassKind.INTERFACE) {
+            checker.report(spec, "@DslBuilder.supertype of $specName must be an interface.")
+            return null
+        }
+        if (declaration.typeParameters.isNotEmpty()) {
+            checker.report(spec, "@DslBuilder.supertype of $specName must not be generic.")
+            return null
+        }
+        val typeName = checker.renderTypeName(spec, type) ?: return null
+        val visibility = effectiveVisibility(declaration, checker) ?: return null
+        return ResultSupertype(type, declaration, typeName, visibility)
+    }
+
+    private fun restrictiveVisibility(visibilities: Iterable<KModifier>): KModifier =
+        if (KModifier.INTERNAL in visibilities) KModifier.INTERNAL else KModifier.PUBLIC
+
+    /**
+     * Reports generated declaration collisions before opening an output file,
+     * keeping invalid custom or derived names as KSP diagnostics instead of
+     * file-creation failures or later redeclaration errors.
+     */
+    private fun reserveGeneratedNames(
+        spec: KSClassDeclaration,
+        resolver: Resolver,
+        names: Names,
+        packageName: String,
+        specQualifiedName: String,
+        requiredProperties: List<RequiredProperty>,
+        checker: Checker,
+    ) {
+        fun qualified(name: String): String = if (packageName.isEmpty()) name else "$packageName.$name"
+        val owner = spec.qualifiedName?.asString() ?: spec.simpleName.asString()
+        val typeNames = listOf(names.builderName, names.resultName)
+        for (name in typeNames) {
+            val qualifiedName = qualified(name)
+            val existing = resolver.getClassDeclarationByName(resolver.getKSNameFromString(qualifiedName))
+            val reservedBy = generatedTypeOwners[qualifiedName]
+            when {
+                existing != null ->
+                    checker.report(spec, "Generated type $qualifiedName conflicts with an existing declaration.")
+
+                reservedBy != null && reservedBy != owner ->
+                    checker.report(spec, "Generated type $qualifiedName is also produced by $reservedBy.")
+            }
+        }
+
+        var functionKey: String? = null
+        if (names.generateFunction) {
+            val parameterTypes = requiredProperties.map { it.typeName } +
+                    LambdaTypeName.get(receiver = classNameOf(specQualifiedName), returnType = UNIT)
+            val qualifiedName = qualified(names.functionName)
+            val parameterErasures = parameterTypes.map(::erasureKey)
+            functionKey = "$qualifiedName(${parameterErasures.joinToString()})"
+            val existing = resolver.getFunctionDeclarationsByName(
+                resolver.getKSNameFromString(qualifiedName),
+                includeTopLevel = true,
+            ).any { function ->
+                function.parentDeclaration == null &&
+                        function.packageName.asString() == packageName &&
+                        function.parameters.map { parameter ->
+                            checker.erasureKey(parameter.type.resolve())
+                        } == parameterErasures
+            }
+            val reservedBy = generatedFunctionOwners[functionKey]
+            when {
+                existing ->
+                    checker.report(spec, "Generated function $qualifiedName conflicts with an existing declaration.")
+
+                reservedBy != null && reservedBy != owner ->
+                    checker.report(spec, "Generated function $qualifiedName is also produced by $reservedBy.")
+            }
+        }
+
+        if (!checker.valid) return
+        for (name in typeNames) generatedTypeOwners[qualified(name)] = owner
+        if (functionKey != null) generatedFunctionOwners[functionKey] = owner
     }
 
     /**
@@ -1162,26 +1284,12 @@ class DslProcessor(
      * unresolvable supertype defers the spec to a later round.
      */
     private class Hierarchy(private val checker: Checker) {
-        fun abstractProperties(
-            declaration: KSClassDeclaration,
-            initialEnvironment: Map<KSTypeParameter, KSType> = emptyMap(),
-        ): List<SubstitutedMember<KSPropertyDeclaration>> {
-            val members = LinkedHashMap<String, SubstitutedMember<KSPropertyDeclaration>>()
-            val seen = mutableSetOf<String>()
-            walk(declaration, initialEnvironment) { member, environment ->
-                if (member !is KSPropertyDeclaration) return@walk
-                val name = member.simpleName.asString()
-                if (!seen.add(name)) return@walk
-                if (!member.isAbstractMember()) return@walk
-                members[name] = SubstitutedMember(member, environment)
-            }
-            return members.values.toList()
-        }
+        private val reportedStarProjections = mutableSetOf<String>()
 
         fun abstractFunctions(declaration: KSClassDeclaration): List<SubstitutedMember<KSFunctionDeclaration>> {
             val members = LinkedHashMap<String, SubstitutedMember<KSFunctionDeclaration>>()
             val seen = mutableSetOf<String>()
-            walk(declaration, emptyMap()) { member, environment ->
+            walk(declaration, emptyMap()) { member, environment, _ ->
                 if (member !is KSFunctionDeclaration) return@walk
                 val signature = checker.functionSignature(member, environment)
                 if (!seen.add(signature)) return@walk
@@ -1195,27 +1303,85 @@ class DslProcessor(
          * extension-collision checks.
          */
         fun functionNames(declaration: KSClassDeclaration): Set<String> = buildSet {
-            walk(declaration, emptyMap()) { member, _ ->
+            walk(declaration, emptyMap()) { member, _, _ ->
                 if (member is KSFunctionDeclaration) add(member.simpleName.asString())
             }
         }
 
         /**
          * Collects every property of the hierarchy, abstract or concrete, so the
-         * caller can tell override candidates from members that must be provided;
-         * the nearest declaration wins when a name is redeclared.
+         * caller can tell override candidates from members that must be provided.
+         * A declaration at the nearest depth wins; compatible siblings at the same
+         * depth are merged by override specificity.
          */
         fun allProperties(
             declaration: KSClassDeclaration,
             initialEnvironment: Map<KSTypeParameter, KSType> = emptyMap(),
         ): List<SubstitutedMember<KSPropertyDeclaration>> {
-            val members = LinkedHashMap<String, SubstitutedMember<KSPropertyDeclaration>>()
-            walk(declaration, initialEnvironment) { member, environment ->
+            val candidates = linkedMapOf<String, MutableList<PropertyCandidate>>()
+            walk(declaration, initialEnvironment) { member, environment, depth ->
                 if (member !is KSPropertyDeclaration) return@walk
                 val name = member.simpleName.asString()
-                if (name !in members) members[name] = SubstitutedMember(member, environment)
+                candidates.getOrPut(name, ::mutableListOf) += PropertyCandidate(
+                    SubstitutedMember(member, environment),
+                    depth,
+                )
             }
-            return members.values.toList()
+            return candidates.mapNotNull { (name, declarations) ->
+                selectProperty(declaration, name, declarations)
+            }
+        }
+
+        private fun selectProperty(
+            root: KSClassDeclaration,
+            name: String,
+            candidates: List<PropertyCandidate>,
+        ): SubstitutedMember<KSPropertyDeclaration>? {
+            val nearestDepth = candidates.minOfOrNull { it.depth } ?: return null
+            val nearest = candidates.filter { it.depth == nearestDepth }.map { it.member }
+            if (nearest.size == 1) return nearest.single()
+
+            val types = nearest.associateWith { member ->
+                checker.substituteType(member.declaration.type.resolve(), member.environment)
+            }
+            if (types.values.any { it.isError }) {
+                checker.reportUnresolved(root, "An inherited type of property $name is not resolvable yet.")
+                return nearest.first()
+            }
+            fun overrides(
+                candidate: SubstitutedMember<KSPropertyDeclaration>,
+                other: SubstitutedMember<KSPropertyDeclaration>,
+            ): Boolean {
+                if (candidate === other) return true
+                val candidateOwnerIsNarrower = checker.ownerIsSubtypeOf(candidate.declaration, other.declaration, root)
+                val otherOwnerIsNarrower = checker.ownerIsSubtypeOf(other.declaration, candidate.declaration, root)
+                if (candidateOwnerIsNarrower != otherOwnerIsNarrower) return candidateOwnerIsNarrower
+                val candidateType = types.getValue(candidate)
+                val otherType = types.getValue(other)
+                return if (other.declaration.isMutable) {
+                    candidate.declaration.isMutable &&
+                            checker.accepts(otherType, candidateType, root) &&
+                            checker.accepts(candidateType, otherType, root)
+                } else {
+                    checker.accepts(otherType, candidateType, root)
+                }
+            }
+
+            val dominant = nearest.filter { candidate -> nearest.all { overrides(candidate, it) } }
+            if (dominant.size == 1) return dominant.single()
+            val concrete = dominant.filterNot { it.declaration.isAbstractMember() }
+            if (concrete.size == 1) return concrete.single()
+
+            val renderedTypes = nearest.mapNotNull { checker.typeNameOrNull(types.getValue(it)) }
+                .distinct()
+                .joinToString()
+            checker.report(
+                root,
+                "Inherited property $name has no unique most-specific declaration" +
+                        renderedTypes.takeIf { it.isNotEmpty() }?.let { " among types $it" }.orEmpty() +
+                        "; redeclare it in ${root.simpleName.asString()}."
+            )
+            return nearest.first()
         }
 
         /** Returns `true` when [property] is abstract in its declaring interface. */
@@ -1238,16 +1404,16 @@ class DslProcessor(
         private fun walk(
             declaration: KSClassDeclaration,
             initialEnvironment: Map<KSTypeParameter, KSType>,
-            visit: (KSDeclaration, Map<KSTypeParameter, KSType>) -> Unit,
+            visit: (KSDeclaration, Map<KSTypeParameter, KSType>, Int) -> Unit,
         ) {
-            val pending = ArrayDeque<Pair<KSClassDeclaration, Map<KSTypeParameter, KSType>>>()
-            pending += declaration to initialEnvironment
+            val pending = ArrayDeque<HierarchyEntry>()
+            pending += HierarchyEntry(declaration, initialEnvironment, 0)
             val visited = mutableSetOf<String>()
             while (pending.isNotEmpty()) {
-                val (current, environment) = pending.removeFirst()
+                val (current, environment, depth) = pending.removeFirst()
                 val name = current.qualifiedName?.asString() ?: continue
                 if (!visited.add(name)) continue
-                for (member in current.declarations) visit(member, environment)
+                for (member in current.declarations) visit(member, environment, depth)
                 for (superType in current.superTypes) {
                     val resolved = superType.resolve()
                     if (resolved.isError) {
@@ -1258,16 +1424,37 @@ class DslProcessor(
                         return
                     }
                     val superDeclaration = resolved.declaration as? KSClassDeclaration ?: continue
+                    if (resolved.arguments.any { it.type == null }) {
+                        val key =
+                            "${declaration.qualifiedName?.asString()}:${superDeclaration.qualifiedName?.asString()}"
+                        if (reportedStarProjections.add(key)) {
+                            checker.report(
+                                declaration,
+                                "Star-projected supertype ${superDeclaration.simpleName.asString()} is not supported by DslBuilder inheritance."
+                            )
+                        }
+                        continue
+                    }
                     val nextEnvironment = superDeclaration.typeParameters.zip(resolved.arguments)
-                        .mapNotNull { (parameter, argument) ->
-                            val argumentType = argument.type?.resolve() ?: return@mapNotNull null
+                        .associate { (parameter, argument) ->
+                            val argumentType = requireNotNull(argument.type).resolve()
                             parameter to checker.substituteType(argumentType, environment)
                         }
-                        .toMap()
-                    pending += superDeclaration to nextEnvironment
+                    pending += HierarchyEntry(superDeclaration, nextEnvironment, depth + 1)
                 }
             }
         }
+
+        private class PropertyCandidate(
+            val member: SubstitutedMember<KSPropertyDeclaration>,
+            val depth: Int,
+        )
+
+        private data class HierarchyEntry(
+            val declaration: KSClassDeclaration,
+            val environment: Map<KSTypeParameter, KSType>,
+            val depth: Int,
+        )
     }
 
     /**
@@ -1450,6 +1637,30 @@ class DslProcessor(
             if (type.isError) null else type.toTypeName()
         } catch (_: Exception) {
             null
+        }
+
+        fun erasureKey(type: KSType): String =
+            type.makeNotNullable().declaration.qualifiedName?.asString()
+                ?: type.toString().substringBefore('<').removeSuffix("?")
+
+        fun ownerIsSubtypeOf(
+            candidate: KSDeclaration,
+            other: KSDeclaration,
+            symbol: KSNode,
+        ): Boolean {
+            val candidateOwner = candidate.parentDeclaration as? KSClassDeclaration ?: return false
+            val otherOwner = other.parentDeclaration as? KSClassDeclaration ?: return false
+            val otherName = otherOwner.qualifiedName?.asString() ?: return false
+            return candidateOwner.qualifiedName?.asString() != otherName &&
+                    findSuperTypeArguments(candidateOwner, symbol, otherName) != null
+        }
+
+        fun accepts(expected: KSType, provided: KSType, symbol: KSNode): Boolean {
+            if (expected.isAssignableFrom(provided)) return true
+            if (expected.arguments.isNotEmpty() || provided.arguments.isNotEmpty()) return false
+            val expectedName = expected.declaration.qualifiedName?.asString() ?: return false
+            val providedDeclaration = provided.declaration as? KSClassDeclaration ?: return false
+            return findSuperTypeArguments(providedDeclaration, symbol, expectedName) != null
         }
 
         private fun symbolDescription(symbol: KSNode): String = when (symbol) {
@@ -1779,9 +1990,18 @@ class DslProcessor(
         val builderQualifiedName: String,
         val resultQualifiedName: String,
         val resultSupertype: KSType?,
-        val visibility: KModifier,
+        val builderVisibility: KModifier,
+        val resultVisibility: KModifier,
         val specQualifiedName: String,
         val required: List<RequiredProperty>,
+        val requiresConfiguration: Boolean,
+    )
+
+    private class ResultSupertype(
+        val type: KSType,
+        val declaration: KSClassDeclaration,
+        val typeName: TypeName,
+        val visibility: KModifier,
     )
 
     private class ChildScope(

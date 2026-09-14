@@ -355,6 +355,15 @@ class LambdaDslTest {
 
         assertEquals(0.5f, generic.child.intensity)
     }
+
+    @Test
+    fun `inherited generic child return types are substituted`() {
+        val generic = buildGenericUnitChildReturn {
+            child { intensity = 0.75f }
+        }
+
+        assertEquals(0.75f, generic.child.intensity)
+    }
 }
 
 class HierarchyRegressionTest {
@@ -429,6 +438,38 @@ class GenerationEdgeCaseTest {
         }
 
         assertEquals("internal", (result.items.single() as InternalListChild).value)
+    }
+
+    @Test
+    fun `internal child result visibility propagates through helpers and parent results`() {
+        val list = buildPublicInternalResultList {
+            publicInternalResultChild
+        }
+        val scope = buildPublicInternalResultScope {
+            child()
+        }
+
+        assertEquals("internal-result", (list.items.single() as InternalChildResult).value)
+        assertEquals("internal-result", scope.child.value)
+    }
+
+    @Test
+    fun `diamond inheritance selects the most specific property type`() {
+        val result = buildDiamondProperty(value = "specific")
+
+        assertEquals("specific", result.value)
+    }
+
+    @Test
+    fun `list children with required nested scopes are configured explicitly`() {
+        val result = buildRequiredNestedList {
+            requiredNestedChild {
+                event { intensity = 0.25f }
+            }
+        }
+
+        val child = result.items.single() as RequiredNestedChild
+        assertEquals(0.25f, child.event.intensity)
     }
 
     @Test
