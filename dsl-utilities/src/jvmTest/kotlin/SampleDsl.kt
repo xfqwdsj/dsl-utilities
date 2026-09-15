@@ -651,3 +651,74 @@ private typealias PrivatePlainAlias = String
 interface PrivateAliasDsl {
     val value: PrivatePlainAlias
 }
+
+typealias AliasedParamChildBlock<T> = T.() -> Unit
+
+interface AliasedParamChildBase<T> {
+    @DslChild
+    fun aliasedParamChild(block: AliasedParamChildBlock<T>)
+}
+
+@DslBuilder
+interface AliasedParamChildScopeDsl : AliasedParamChildBase<TransientEventDsl>
+
+interface AliasedValueBase<T> {
+    val value: T
+}
+
+typealias AliasedValueBaseAlias<T> = AliasedValueBase<T>
+
+interface AliasedValueMiddle<T> : AliasedValueBaseAlias<T>
+
+@DslBuilder
+interface AliasedValueMidDsl : AliasedValueMiddle<String> {
+    @DslValue(initial = "own")
+    var own: String
+}
+
+typealias AliasedMapperBase<A, B> = DslMapper<A, B>
+
+abstract class AliasedMapperMiddle<A, B> : AliasedMapperBase<A, B>
+
+object AliasedMapperImpl : AliasedMapperMiddle<Int, String>() {
+    override fun toStored(value: String): Int = value.toInt()
+
+    override fun toValue(stored: Int): String = stored.toString()
+}
+
+@DslBuilder
+interface AliasedMapperDsl {
+    @DslValue(initial = "7", mapper = AliasedMapperImpl::class)
+    var value: String
+}
+
+@DslBuilder
+interface GenericArgumentAnnotationDsl {
+    val value: List<@MaxBytes(3) String>?
+
+    val nested: Map<String, List<@MaxBytes(4) Int>>
+}
+
+@DslBuilder
+interface FunctionRequiredDsl {
+    val callback: (String) -> Unit
+
+    @DslValue(initial = "x")
+    var value: String
+}
+
+@DslBuilder
+interface NullableFunctionRequiredDsl {
+    val callback: (() -> Unit)?
+}
+
+@DslBuilder
+interface FunctionChildDsl {
+    val callback: (String) -> Unit
+}
+
+@DslBuilder
+interface FunctionListHolderDsl {
+    @DslList(children = [FunctionChildDsl::class])
+    var items: MutableList<Any>
+}

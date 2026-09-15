@@ -694,4 +694,68 @@ class AliasHandlingTest {
 
         assertEquals("private", result.value)
     }
+
+    @Test
+    fun `aliased child blocks inherited from generic bases bind their receiver`() {
+        val result = buildAliasedParamChildScope {
+            aliasedParamChild { intensity = 0.7f }
+        }
+
+        assertEquals(0.7f, result.aliasedParamChild.intensity)
+    }
+
+    @Test
+    fun `aliased supertypes of generic middle bases contribute their members`() {
+        val result = buildAliasedValueMid(value = "inherited")
+
+        assertEquals("inherited", result.value)
+        assertEquals("own", result.own)
+    }
+
+    @Test
+    fun `mappers inherited through aliased generic bases are resolved`() {
+        val initial = buildAliasedMapper()
+        val changed = buildAliasedMapper { value = "9" }
+
+        assertEquals("7", initial.value)
+        assertEquals("9", changed.value)
+    }
+
+    @Test
+    fun `type-use annotations on type arguments are preserved`() {
+        val builder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "GenericArgumentAnnotationDslBuilder.kt" }
+        assertNotNull(builder, "GenericArgumentAnnotationDslBuilder.kt was not generated")
+        val text = builder.readText()
+        assertTrue(text.contains("List<@MaxBytes(atMost = 3.toByte()) String>?"), text)
+        assertTrue(text.contains("Map<String, List<@MaxBytes(atMost = 4.toByte()) Int>>"), text)
+
+        val result = buildGenericArgumentAnnotation(
+            value = listOf("a"),
+            nested = mapOf("key" to listOf(1)),
+        )
+
+        assertEquals(listOf("a"), result.value)
+        assertEquals(mapOf("key" to listOf(1)), result.nested)
+    }
+
+    @Test
+    fun `required function type properties are noinline in generated entry points`() {
+        var seen: String? = null
+        val result = buildFunctionRequired(callback = { seen = it })
+
+        result.callback("called")
+        assertEquals("called", seen)
+        assertEquals("x", result.value)
+
+        val nullable = buildNullableFunctionRequired(callback = null)
+        assertNull(nullable.callback)
+
+        val holder = buildFunctionListHolder {
+            functionChild(callback = { })
+        }
+        assertEquals(1, holder.items.size)
+        assertNotNull((holder.items.single() as FunctionChild).callback)
+    }
 }
