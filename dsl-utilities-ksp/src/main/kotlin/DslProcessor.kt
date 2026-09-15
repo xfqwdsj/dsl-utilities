@@ -1884,7 +1884,14 @@ class DslProcessor(
                     )
                     return null
                 }
-                val annotationSources = listOfNotNull(type, resolved, shape, annotationsFrom)
+                // A kept alias is rendered by name, and its declaration already
+                // carries the target annotations, so merging the target again
+                // would duplicate them.
+                val annotationSources = if (resolved.declaration is KSTypeAlias) {
+                    listOfNotNull(type, resolved, annotationsFrom)
+                } else {
+                    listOfNotNull(type, resolved, shape, annotationsFrom)
+                }
                 if (!annotationSources.all { areTypeAnnotationsVisible(it) }) {
                     report(
                         symbol,
@@ -1930,7 +1937,7 @@ class DslProcessor(
         ): TypeName {
             val declared = type.toTypeName()
             val rawType = (declared as? ParameterizedTypeName)?.rawType ?: return declared
-            val carried = carriedArguments(annotationsFrom ?: shape, type)
+            val carried = carriedArguments(annotationsFrom, type).ifEmpty { carriedArguments(shape, type) }
             val arguments = type.arguments.mapIndexed { index, argument ->
                 val reference = argument.type ?: return@mapIndexed STAR
                 val argumentName = renderTypeName(symbol, reference.resolve(), carried.getOrNull(index))
@@ -2033,7 +2040,7 @@ class DslProcessor(
          */
         private fun lambdaTypeName(symbol: KSNode, type: KSType, shape: KSType, annotationsFrom: KSType?): TypeName {
             val arguments = type.arguments
-            val carried = carriedArguments(annotationsFrom ?: shape, type)
+            val carried = carriedArguments(annotationsFrom, type).ifEmpty { carriedArguments(shape, type) }
             val isExtension = shape.annotations.any { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }
             val receiver = if (isExtension) {
                 arguments.firstOrNull()?.type?.resolve()?.let { renderTypeName(symbol, it, carried.getOrNull(0)) }
