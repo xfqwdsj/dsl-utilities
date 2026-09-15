@@ -763,6 +763,16 @@ interface NestedWrappedDsl {
     val triple: List<List<WrappedAlias<Int>>>
 }
 
+interface InheritedAnnotationBase<T> {
+    val annotated: List<@MaxBytes(95) T>
+}
+
+@DslBuilder
+interface InheritedAnnotationDsl : InheritedAnnotationBase<String> {
+    @DslValue(initial = "x")
+    var own: String
+}
+
 @DslBuilder
 interface FunctionRequiredDsl {
     val callback: (String) -> Unit

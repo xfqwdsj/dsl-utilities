@@ -851,6 +851,22 @@ class AliasHandlingTest {
     }
 
     @Test
+    fun `annotations on inherited generic members are carried`() {
+        val builder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "InheritedAnnotationDslBuilder.kt" }
+        assertNotNull(builder, "InheritedAnnotationDslBuilder.kt was not generated")
+        assertTrue(
+            builder.readText().contains("List<@MaxBytes(atMost = 95.toByte()) String>"),
+            builder.readText(),
+        )
+
+        val result = buildInheritedAnnotation(annotated = listOf("a"))
+
+        assertEquals(listOf("a"), result.annotated)
+    }
+
+    @Test
     fun `required function type properties are noinline in generated entry points`() {
         var seen: String? = null
         val result = buildFunctionRequired(callback = { seen = it })
