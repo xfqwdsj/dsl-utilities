@@ -713,6 +713,20 @@ interface CarriedFunctionAnnotationDsl {
     val callback: CarriedFunctionAnnotationAlias<String>
 }
 
+typealias MarkedKeepAlias<T> = @MaxBytes(40) MutableList<@MaxBytes(41) T>
+
+@DslBuilder
+interface MarkedKeepDsl {
+    val items: MarkedKeepAlias<*>
+}
+
+typealias WrappedAlias<T> = List<@MaxBytes(20) T>
+
+@DslBuilder
+interface WrappedDsl {
+    val value: List<WrappedAlias<Int>>
+}
+
 @DslBuilder
 interface FunctionRequiredDsl {
     val callback: (String) -> Unit

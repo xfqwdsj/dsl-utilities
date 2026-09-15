@@ -769,6 +769,37 @@ class AliasHandlingTest {
     }
 
     @Test
+    fun `kept aliases do not duplicate target annotations`() {
+        val builder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "MarkedKeepDslBuilder.kt" }
+        assertNotNull(builder, "MarkedKeepDslBuilder.kt was not generated")
+        val text = builder.readText()
+        assertTrue(text.contains("MarkedKeepAlias<*>"), text)
+        assertFalse(text.contains("@MaxBytes(atMost = 40.toByte()) MarkedKeepAlias"), text)
+
+        val result = buildMarkedKeep(items = mutableListOf<Any>())
+
+        assertTrue(result.items.isEmpty())
+    }
+
+    @Test
+    fun `annotations in nested alias targets are carried`() {
+        val builder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "WrappedDslBuilder.kt" }
+        assertNotNull(builder, "WrappedDslBuilder.kt was not generated")
+        assertTrue(
+            builder.readText().contains("List<List<@MaxBytes(atMost = 20.toByte()) Int>>"),
+            builder.readText(),
+        )
+
+        val result = buildWrapped(value = listOf(listOf(1)))
+
+        assertEquals(listOf(listOf(1)), result.value)
+    }
+
+    @Test
     fun `required function type properties are noinline in generated entry points`() {
         var seen: String? = null
         val result = buildFunctionRequired(callback = { seen = it })
