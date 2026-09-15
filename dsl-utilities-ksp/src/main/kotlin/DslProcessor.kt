@@ -524,12 +524,8 @@ class DslProcessor(
         }
 
         for (property in childScopes) {
-            val blockType = LambdaTypeName.get(
-                receiver = classNameOf(property.child.specQualifiedName),
-                returnType = UNIT,
-            )
             val parameters = property.parameters.map { ParameterSpec.builder(it.name, it.typeName).build() } +
-                    ParameterSpec.builder(property.blockName, blockType).build()
+                    ParameterSpec.builder(property.blockName, property.blockTypeName).build()
             val arguments = requiredArguments(property.child.required)
             builder.addFunction(
                 FunSpec.builder(property.name)
@@ -1144,8 +1140,10 @@ class DslProcessor(
                 checker.report(function, "A parameter of @DslChild function $name has no name.")
                 return null
             }
-            val parameterType = checker.substituteType(parameter.type.resolve(), environment)
-            val parameterTypeName = checker.renderTypeName(function, parameterType) ?: return null
+            val declarationParameterType = parameter.type.resolve()
+            val parameterType = checker.substituteType(declarationParameterType, environment)
+            val parameterTypeName = checker.renderTypeName(function, parameterType, declarationParameterType)
+                ?: return null
             if (parameterName != required.name || !required.type.isAssignableFrom(parameterType)) {
                 checker.report(
                     function,
@@ -1155,7 +1153,8 @@ class DslProcessor(
             }
             scopeParameters += Parameter(parameterName, parameterTypeName)
         }
-        return ChildScope(name, scopeParameters, blockName, child)
+        val blockTypeName = checker.renderTypeName(function, blockType, declaredBlockType) ?: return null
+        return ChildScope(name, scopeParameters, blockName, blockTypeName, child)
     }
 
     /**
@@ -1883,7 +1882,17 @@ class DslProcessor(
                 return null
             }
             return try {
-                val shape = aliasTarget(type)
+                // Substituting a declared type can drop the function-type
+                // receiver marker, so the declaration-site type supplies the
+                // shape whenever it describes the same classifier.
+                val shape = if (annotationsFrom != null &&
+                    annotationsFrom.declaration.qualifiedName?.asString() ==
+                    resolved.declaration.qualifiedName?.asString()
+                ) {
+                    aliasTarget(annotationsFrom)
+                } else {
+                    aliasTarget(type)
+                }
                 val keptAlias = resolved.declaration is KSTypeAlias
                 // Annotations on a link of the alias chain cannot be recovered by
                 // expansion, so such a type is rendered by the outermost alias
@@ -1944,8 +1953,9 @@ class DslProcessor(
                         rendered.annotated(annotationSources, ignoreExtensionMarker = isFunction)
                     }
                 }
-            } catch (_: Exception) {
-                report(symbol, "The type of ${symbolDescription(symbol)} is unsupported.")
+            } catch (exception: Exception) {
+                val detail = exception.message ?: exception::class.simpleName
+                report(symbol, "The type of ${symbolDescription(symbol)} is unsupported: $detail")
                 null
             }
         }
@@ -2588,6 +2598,7 @@ class DslProcessor(
         val name: String,
         val parameters: List<Parameter>,
         val blockName: String,
+        val blockTypeName: TypeName,
         val child: ChildSpec,
     ) {
         var fieldName: String = "${name}Field"
