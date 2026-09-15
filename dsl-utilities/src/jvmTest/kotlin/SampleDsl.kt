@@ -774,6 +774,27 @@ interface InheritedAnnotationDsl : InheritedAnnotationBase<String> {
 }
 
 @DslBuilder
+interface AnnotatedParamChildDsl {
+    val values: List<String>
+}
+
+interface AnnotatedParamChildBase<T> {
+    @DslChild
+    fun child(values: List<@MaxBytes(90) T>, block: AnnotatedParamChildDsl.() -> Unit = {})
+}
+
+@DslBuilder
+interface AnnotatedParamScopeDsl : AnnotatedParamChildBase<String>
+
+typealias AnnotatedChildBlock = @MaxBytes(91) AnnotatedParamChildDsl.() -> Unit
+
+@DslBuilder
+interface AnnotatedBlockScopeDsl {
+    @DslChild
+    fun child(values: List<String>, block: AnnotatedChildBlock = {})
+}
+
+@DslBuilder
 interface FunctionRequiredDsl {
     val callback: (String) -> Unit
 

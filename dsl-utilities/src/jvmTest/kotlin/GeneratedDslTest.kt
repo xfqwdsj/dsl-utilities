@@ -867,6 +867,42 @@ class AliasHandlingTest {
     }
 
     @Test
+    fun `annotations on inherited child scope parameters are carried`() {
+        val builder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "AnnotatedParamScopeDslBuilder.kt" }
+        assertNotNull(builder, "AnnotatedParamScopeDslBuilder.kt was not generated")
+        assertTrue(
+            builder.readText().contains("List<@MaxBytes(atMost = 90.toByte()) String>"),
+            builder.readText(),
+        )
+
+        val result = buildAnnotatedParamScope {
+            child(values = listOf("a")) { }
+        }
+
+        assertEquals(listOf("a"), result.child.values)
+    }
+
+    @Test
+    fun `annotations on child block aliases are carried`() {
+        val builder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "AnnotatedBlockScopeDslBuilder.kt" }
+        assertNotNull(builder, "AnnotatedBlockScopeDslBuilder.kt was not generated")
+        assertTrue(
+            builder.readText().contains("@MaxBytes(atMost = 91.toByte()) AnnotatedParamChildDsl.() -> Unit"),
+            builder.readText(),
+        )
+
+        val result = buildAnnotatedBlockScope {
+            child(values = listOf("b")) { }
+        }
+
+        assertEquals(listOf("b"), result.child.values)
+    }
+
+    @Test
     fun `required function type properties are noinline in generated entry points`() {
         var seen: String? = null
         val result = buildFunctionRequired(callback = { seen = it })
