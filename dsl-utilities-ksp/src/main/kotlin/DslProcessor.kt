@@ -119,19 +119,21 @@ class DslProcessor(
                 checker.report(property, "Property $name must not be annotated with both @DslValue and @DslList.")
                 continue
             }
-            val type = checker.substituteType(property.type.resolve(), member.environment)
+            val declarationType = property.type.resolve()
+            val type = checker.substituteType(declarationType, member.environment)
             if (dslList != null) {
-                listProperty(name, property, type, dslList, checker)?.let(listProperties::add)
+                listProperty(name, property, type, declarationType, dslList, checker)?.let(listProperties::add)
             } else if (!property.isMutable) {
                 requiredProperty(
                     name,
                     property,
                     type,
+                    declarationType,
                     dslValue,
                     checker
                 )?.let(requiredProperties::add)
             } else if (dslValue != null) {
-                valueProperty(name, property, type, dslValue, checker)?.let(valueProperties::add)
+                valueProperty(name, property, type, declarationType, dslValue, checker)?.let(valueProperties::add)
             } else {
                 checker.report(property, "Property $name must be annotated with @DslValue or @DslList.")
             }
@@ -809,11 +811,12 @@ class DslProcessor(
         name: String,
         property: KSPropertyDeclaration,
         type: KSType,
+        declarationType: KSType,
         annotation: KSAnnotation?,
         checker: Checker,
     ): RequiredProperty? {
         val resolvedType = checker.expandAliases(type)
-        val typeName = checker.renderTypeName(property, type)
+        val typeName = checker.renderTypeName(property, type, declarationType)
             ?: return null
         if (annotation?.string("initial")?.isNotEmpty() == true) {
             checker.report(property, "@DslValue.initial applies to var properties; $name is a val.")
@@ -839,6 +842,7 @@ class DslProcessor(
         name: String,
         property: KSPropertyDeclaration,
         type: KSType,
+        declarationType: KSType,
         annotation: KSAnnotation,
         checker: Checker,
     ): ValueProperty? {
@@ -850,7 +854,7 @@ class DslProcessor(
             )
             return null
         }
-        val typeName = checker.renderTypeName(property, type) ?: return null
+        val typeName = checker.renderTypeName(property, type, declarationType) ?: return null
         val mapper = checker.mapper(property, name, annotation.type("mapper"), resolvedType)
         if (!checker.valid) return null
         val initial = annotation.string("initial").orEmpty().takeIf { it.isNotEmpty() }
@@ -908,6 +912,7 @@ class DslProcessor(
         name: String,
         property: KSPropertyDeclaration,
         type: KSType,
+        declarationType: KSType,
         annotation: KSAnnotation,
         checker: Checker,
     ): ListProperty? {
@@ -944,8 +949,9 @@ class DslProcessor(
             checker.report(property, "Property $name has an unsupported element type.")
             return null
         }
-        val elementTypeName = checker.renderTypeName(property, elementType) ?: return null
-        val listTypeName = checker.renderTypeName(property, type) ?: return null
+        val declarationElementType = checker.expandAliases(declarationType).arguments.getOrNull(0)?.type?.resolve()
+        val elementTypeName = checker.renderTypeName(property, elementType, declarationElementType) ?: return null
+        val listTypeName = checker.renderTypeName(property, type, declarationType) ?: return null
         val resolvedElementType = checker.expandAliases(elementType)
         val validatorPrefix = checker.validator(property, name, annotation.type("validator"), resolvedElementType)
         if (!checker.valid) return null
@@ -1202,8 +1208,9 @@ class DslProcessor(
         for (member in hierarchy.allProperties(declaration).filter { hierarchy.isAbstract(it.declaration) }) {
             val property = member.declaration
             if (property.isMutable) continue
-            val type = checker.substituteType(property.type.resolve(), member.environment)
-            val typeName = checker.renderTypeName(property, type) ?: return null
+            val declarationType = property.type.resolve()
+            val type = checker.substituteType(declarationType, member.environment)
+            val typeName = checker.renderTypeName(property, type, declarationType) ?: return null
             required += RequiredProperty(
                 property.simpleName.asString(),
                 typeName,
@@ -1869,7 +1876,7 @@ class DslProcessor(
          * type parameter usage, and substitution replaces that usage without its
          * annotations, so the unsubstituted type supplies them while rendering.
          */
-        private fun renderTypeName(symbol: KSNode, type: KSType, annotationsFrom: KSType?): TypeName? {
+        fun renderTypeName(symbol: KSNode, type: KSType, annotationsFrom: KSType?): TypeName? {
             val resolved = expandAliases(type)
             if (resolved.isError) {
                 reportUnresolved(symbol, "The type of ${symbolDescription(symbol)} is not resolvable yet.")
@@ -1888,9 +1895,10 @@ class DslProcessor(
                 if (!isDeclarationVisible(resolved) || !isDeclarationVisible(shape) ||
                     (renderByName && !isDeclarationVisible(aliasUsage))
                 ) {
+                    val hidden = if (renderByName) aliasUsage else resolved
                     report(
                         symbol,
-                        "The type ${typeNameOrNull(resolved) ?: resolved} of ${symbolDescription(symbol)} is not visible from generated code."
+                        "The type ${typeNameOrNull(hidden) ?: hidden} of ${symbolDescription(symbol)} is not visible from generated code."
                     )
                     return null
                 }
@@ -1960,11 +1968,21 @@ class DslProcessor(
         }
 
         private fun hasAnnotatedAliasLink(type: KSType): Boolean {
-            val annotated = type.declaration is KSTypeAlias &&
-                    (hasRenderableAnnotations(type) || type.arguments.any { argument ->
-                        argument.type?.resolve()?.let { hasRenderableAnnotations(it) } == true
-                    })
-            return annotated || type.arguments.any { argument ->
+            val alias = type.declaration as? KSTypeAlias
+            if (alias != null) {
+                if (hasRenderableAnnotations(type)) return true
+                // An argument annotation only survives expansion when the alias
+                // uses the parameter it maps to; otherwise the annotation has no
+                // effect and the type expands normally.
+                val target = alias.type.resolve()
+                val annotatedArgument = type.arguments.withIndex().any { (index, argument) ->
+                    val parameter = alias.typeParameters.getOrNull(index) ?: return@any false
+                    val argumentType = argument.type?.resolve() ?: return@any false
+                    hasRenderableAnnotations(argumentType) && containsParameter(target, setOf(parameter))
+                }
+                if (annotatedArgument) return true
+            }
+            return type.arguments.any { argument ->
                 argument.type?.resolve()?.let { hasAnnotatedAliasLink(it) } == true
             }
         }
