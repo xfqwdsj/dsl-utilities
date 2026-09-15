@@ -794,6 +794,16 @@ interface AnnotatedBlockScopeDsl {
     fun child(values: List<String>, block: AnnotatedChildBlock = {})
 }
 
+typealias AnnotatedGenericChildBlock<T> = @MaxBytes(92) T.() -> Unit
+
+interface AnnotatedGenericChildBase<T> {
+    @DslChild
+    fun child(block: AnnotatedGenericChildBlock<T>)
+}
+
+@DslBuilder
+interface AnnotatedGenericChildScopeDsl : AnnotatedGenericChildBase<TransientEventDsl>
+
 @DslBuilder
 interface FunctionRequiredDsl {
     val callback: (String) -> Unit

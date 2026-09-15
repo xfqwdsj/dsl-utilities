@@ -903,6 +903,36 @@ class AliasHandlingTest {
     }
 
     @Test
+    fun `generic alias child blocks keep the receiver style`() {
+        val builder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "GenericAliasedChildScopeDslBuilder.kt" }
+        assertNotNull(builder, "GenericAliasedChildScopeDslBuilder.kt was not generated")
+        assertTrue(
+            builder.readText().contains("block: TransientEventDsl.() -> Unit"),
+            builder.readText(),
+        )
+    }
+
+    @Test
+    fun `generic alias child blocks carry their annotations`() {
+        val builder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "AnnotatedGenericChildScopeDslBuilder.kt" }
+        assertNotNull(builder, "AnnotatedGenericChildScopeDslBuilder.kt was not generated")
+        assertTrue(
+            builder.readText().contains("@MaxBytes(atMost = 92.toByte()) TransientEventDsl.() -> Unit"),
+            builder.readText(),
+        )
+
+        val result = buildAnnotatedGenericChildScope {
+            child { intensity = 0.9f }
+        }
+
+        assertEquals(0.9f, result.child.intensity)
+    }
+
+    @Test
     fun `required function type properties are noinline in generated entry points`() {
         var seen: String? = null
         val result = buildFunctionRequired(callback = { seen = it })
