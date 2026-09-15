@@ -599,3 +599,26 @@ interface BareChildParameterBase<B> {
 
 @DslBuilder
 interface BareChildParameterDsl : BareChildParameterBase<TransientEventDsl.() -> Unit>
+
+typealias DirectChildBlockAlias = TransientEventDsl.() -> Unit
+
+@DslBuilder
+interface AliasedBareChildParameterDsl : BareChildParameterBase<DirectChildBlockAlias>
+
+typealias StarListAlias<T> = List<T>?
+
+@DslBuilder
+interface AliasedStarListDsl {
+    @DslValue
+    var values: StarListAlias<*>
+}
+
+interface NullableAliasAnyHolder {
+    val child: AliasAny?
+}
+
+@DslBuilder(supertype = NullableAliasAnyHolder::class, resultName = "NullableAliasAnyHolderResult")
+interface NullableAliasAnyHolderDsl {
+    @DslChild
+    fun child(block: PlainChildDsl.() -> Unit = {})
+}

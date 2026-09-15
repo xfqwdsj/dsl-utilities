@@ -644,4 +644,29 @@ class AliasHandlingTest {
 
         assertEquals(0.6f, result.child.intensity)
     }
+
+    @Test
+    fun `bare type parameter child blocks accept function type aliases`() {
+        val result = buildAliasedBareChildParameter {
+            child { intensity = 0.65f }
+        }
+
+        assertEquals(0.65f, result.child.intensity)
+    }
+
+    @Test
+    fun `aliased nullable star list values default to null`() {
+        val result = buildAliasedStarList()
+
+        assertNull(result.values)
+    }
+
+    @Test
+    fun `nullable aliased Any supertype properties accept child scope results`() {
+        val holder = buildNullableAliasAnyHolder {
+            child { value = "nullable-any" }
+        }
+
+        assertEquals("nullable-any", holder.child.value)
+    }
 }
