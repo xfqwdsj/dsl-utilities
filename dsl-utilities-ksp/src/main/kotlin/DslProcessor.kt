@@ -1044,11 +1044,20 @@ class DslProcessor(
         val isReceiverStyle = blockShape.annotations.any { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }
         val isSuspend = blockShape.isSuspendFunctionType
         val blockType = if (bareParameter) {
-            substitutedBlockType
+            checker.expandAliases(substitutedBlockType)
         } else {
             checker.substituteType(checker.expandAliases(declaredBlockType), environment)
         }
         val arguments = blockType.arguments
+        // A star-projected function type cannot be rendered; report the
+        // projection itself instead of the shape error it would otherwise hit.
+        if (arguments.any { it.type == null } && (blockShape.isFunctionType || isSuspend)) {
+            checker.report(
+                function,
+                "The last parameter of @DslChild function $name is a function type with a star projection, which is not supported."
+            )
+            return null
+        }
         if ((!blockShape.isFunctionType && !isSuspend) || arguments.size != (if (isReceiverStyle) 2 else 1)) {
             checker.report(
                 function,
@@ -1750,8 +1759,12 @@ class DslProcessor(
                 val arguments = current.arguments
                 // A star projection leaves the aliased type parameter without a
                 // value; keeping the alias lets callers reject the type instead
-                // of emitting the unbound parameter.
-                if (arguments.any { it.type == null }) break
+                // of emitting the unbound parameter. The rest of the chain still
+                // carries its nullability.
+                if (arguments.any { it.type == null }) {
+                    nullable = nullable || aliasTarget(current).isMarkedNullable
+                    break
+                }
                 val environment = alias.typeParameters.zip(arguments)
                     .associate { (parameter, argument) ->
                         parameter to requireNotNull(argument.type).resolve()
