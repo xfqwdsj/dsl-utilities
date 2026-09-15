@@ -741,6 +741,34 @@ class AliasHandlingTest {
     }
 
     @Test
+    fun `annotations in alias targets are carried onto substituted arguments`() {
+        val argumentBuilder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "CarriedArgumentAnnotationDslBuilder.kt" }
+        assertNotNull(argumentBuilder, "CarriedArgumentAnnotationDslBuilder.kt was not generated")
+        assertTrue(
+            argumentBuilder.readText()
+                .contains("Map<String, List<@MaxBytes(atMost = 6.toByte()) Int>>"),
+            argumentBuilder.readText(),
+        )
+
+        val functionBuilder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "CarriedFunctionAnnotationDslBuilder.kt" }
+        assertNotNull(functionBuilder, "CarriedFunctionAnnotationDslBuilder.kt was not generated")
+        assertTrue(
+            functionBuilder.readText().contains("(@MaxBytes(atMost = 7.toByte()) String) -> Unit"),
+            functionBuilder.readText(),
+        )
+
+        val result = buildCarriedArgumentAnnotation(value = mapOf("key" to listOf(1)))
+        val callbackResult = buildCarriedFunctionAnnotation(callback = { })
+
+        assertEquals(mapOf("key" to listOf(1)), result.value)
+        assertNotNull(callbackResult.callback)
+    }
+
+    @Test
     fun `required function type properties are noinline in generated entry points`() {
         var seen: String? = null
         val result = buildFunctionRequired(callback = { seen = it })

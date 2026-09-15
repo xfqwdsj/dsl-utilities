@@ -699,6 +699,20 @@ interface GenericArgumentAnnotationDsl {
     val nested: Map<String, List<@MaxBytes(4) Int>>
 }
 
+typealias CarriedArgumentAnnotationAlias<T> = Map<String, List<@MaxBytes(6) T>>
+
+@DslBuilder
+interface CarriedArgumentAnnotationDsl {
+    val value: CarriedArgumentAnnotationAlias<Int>
+}
+
+typealias CarriedFunctionAnnotationAlias<T> = (@MaxBytes(7) T) -> Unit
+
+@DslBuilder
+interface CarriedFunctionAnnotationDsl {
+    val callback: CarriedFunctionAnnotationAlias<String>
+}
+
 @DslBuilder
 interface FunctionRequiredDsl {
     val callback: (String) -> Unit
