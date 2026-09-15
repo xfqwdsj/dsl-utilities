@@ -1877,20 +1877,30 @@ class DslProcessor(
             }
             return try {
                 val shape = aliasTarget(type)
-                if (!isDeclarationVisible(resolved) || !isDeclarationVisible(shape)) {
+                val keptAlias = resolved.declaration is KSTypeAlias
+                // Annotations on a link of the alias chain cannot be recovered by
+                // expansion, so such a type is rendered by the outermost alias
+                // name: the alias declaration keeps them and the type is
+                // identical.
+                val renderByName = keptAlias ||
+                        (type.declaration is KSTypeAlias && hasUnrecoverableAliasAnnotations(type))
+                val aliasUsage = if (keptAlias) resolved else type
+                if (!isDeclarationVisible(resolved) || !isDeclarationVisible(shape) ||
+                    (renderByName && !isDeclarationVisible(aliasUsage))
+                ) {
                     report(
                         symbol,
                         "The type ${typeNameOrNull(resolved) ?: resolved} of ${symbolDescription(symbol)} is not visible from generated code."
                     )
                     return null
                 }
-                // A kept alias is rendered by name, and its declaration already
-                // carries the target annotations, so merging the target again
-                // would duplicate them.
-                val annotationSources = if (resolved.declaration is KSTypeAlias) {
-                    listOfNotNull(type, resolved, annotationsFrom)
-                } else {
-                    listOfNotNull(type, resolved, shape, annotationsFrom)
+                // A by-name alias is rendered through its declaration, which
+                // already carries the target annotations, so merging the expanded
+                // type would duplicate them.
+                val annotationSources = when {
+                    !renderByName -> listOfNotNull(type, resolved, shape, annotationsFrom)
+                    keptAlias -> listOfNotNull(type, resolved, annotationsFrom)
+                    else -> listOfNotNull(type, annotationsFrom)
                 }
                 if (!annotationSources.all { areTypeAnnotationsVisible(it) }) {
                     report(
@@ -1903,27 +1913,67 @@ class DslProcessor(
                 // A kept alias is the result of an unbound star projection
                 // anywhere in the chain, so it cannot be rendered as a function
                 // type even when its own arguments carry no star.
-                val hasUnboundProjection =
-                    resolved.declaration is KSTypeAlias || resolved.arguments.any { it.type == null }
-                if (isFunction && hasUnboundProjection) {
-                    report(
-                        symbol,
-                        "The type of ${symbolDescription(symbol)} has a star-projected type argument, which is not supported."
-                    )
-                    null
-                } else {
-                    val rendered = if (isFunction) {
-                        lambdaTypeName(symbol, resolved, shape, annotationsFrom)
-                    } else {
-                        classifierTypeName(symbol, resolved, shape, annotationsFrom)
+                val hasUnboundProjection = keptAlias || resolved.arguments.any { it.type == null }
+                when {
+                    isFunction && hasUnboundProjection -> {
+                        report(
+                            symbol,
+                            "The type of ${symbolDescription(symbol)} has a star-projected type argument, which is not supported."
+                        )
+                        null
                     }
-                    rendered.annotated(annotationSources, ignoreExtensionMarker = isFunction)
+
+                    renderByName ->
+                        classifierTypeName(symbol, aliasUsage, aliasUsage, null)
+                            .annotated(annotationSources, ignoreExtensionMarker = isFunction)
+
+                    else -> {
+                        val rendered = if (isFunction) {
+                            lambdaTypeName(symbol, resolved, shape, annotationsFrom)
+                        } else {
+                            classifierTypeName(symbol, resolved, shape, annotationsFrom)
+                        }
+                        rendered.annotated(annotationSources, ignoreExtensionMarker = isFunction)
+                    }
                 }
             } catch (_: Exception) {
                 report(symbol, "The type of ${symbolDescription(symbol)} is unsupported.")
                 null
             }
         }
+
+        /**
+         * Returns `true` when a link of the alias chain carries a type-use
+         * annotation that expansion cannot carry over.
+         */
+        private fun hasUnrecoverableAliasAnnotations(type: KSType): Boolean {
+            var current = type
+            val visited = mutableSetOf<String>()
+            while (true) {
+                val alias = current.declaration as? KSTypeAlias ?: return false
+                val name = alias.qualifiedName?.asString() ?: return false
+                if (!visited.add(name)) return false
+                val target = alias.type.resolve()
+                if (hasAnnotatedAliasLink(target)) return true
+                current = target
+            }
+        }
+
+        private fun hasAnnotatedAliasLink(type: KSType): Boolean {
+            val annotated = type.declaration is KSTypeAlias &&
+                    (hasRenderableAnnotations(type) || type.arguments.any { argument ->
+                        argument.type?.resolve()?.let { hasRenderableAnnotations(it) } == true
+                    })
+            return annotated || type.arguments.any { argument ->
+                argument.type?.resolve()?.let { hasAnnotatedAliasLink(it) } == true
+            }
+        }
+
+        private fun hasRenderableAnnotations(type: KSType): Boolean =
+            type.annotations.any { annotation ->
+                val qualifiedName = annotation.annotationType.resolve().declaration.qualifiedName?.asString()
+                qualifiedName !in IGNORED_ANNOTATIONS && qualifiedName?.startsWith("kotlin.internal.") != true
+            }
 
         /**
          * Renders a classifier type, keeping the type-use annotations of its
@@ -2068,17 +2118,21 @@ class DslProcessor(
         }
 
         /**
-         * Applies the type-use annotations of [types] to this type. An alias usage
-         * and its underlying declaration can both carry annotations; identical
-         * specs are emitted once.
+         * Applies the type-use annotations of [types] to this type. An alias
+         * usage, its target, and a carried source can repeat the same annotation;
+         * the highest occurrence count of any single source is emitted, so
+         * repeated annotations of one source stay repeated while overlapping
+         * sources do not duplicate them.
          */
         private fun TypeName.annotated(
             types: List<KSType>,
             ignoreExtensionMarker: Boolean,
         ): TypeName {
-            val seen = mutableSetOf<String>()
-            val annotations = mutableListOf<AnnotationSpec>()
+            val counts = mutableMapOf<String, Int>()
+            val order = mutableListOf<String>()
+            val specs = mutableMapOf<String, AnnotationSpec>()
             for (type in types) {
+                val localCounts = mutableMapOf<String, Int>()
                 for (annotation in type.annotations) {
                     val shortName = annotation.shortName.asString()
                     if (ignoreExtensionMarker && shortName == EXTENSION_FUNCTION_TYPE) continue
@@ -2090,9 +2144,13 @@ class DslProcessor(
                         continue
                     }
                     val spec = annotation.toAnnotationSpec()
-                    if (seen.add(spec.toString())) annotations += spec
+                    val key = spec.toString()
+                    if (specs.putIfAbsent(key, spec) == null) order += key
+                    localCounts[key] = (localCounts[key] ?: 0) + 1
                 }
+                for ((key, count) in localCounts) counts[key] = maxOf(counts[key] ?: 0, count)
             }
+            val annotations = order.flatMap { key -> List(counts.getValue(key)) { specs.getValue(key) } }
             return if (annotations.isEmpty()) this else annotated(annotations)
         }
 
