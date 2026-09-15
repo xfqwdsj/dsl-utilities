@@ -1049,12 +1049,13 @@ class DslProcessor(
             checker.substituteType(checker.expandAliases(declaredBlockType), environment)
         }
         val arguments = blockType.arguments
-        // A star-projected function type cannot be rendered; report the
-        // projection itself instead of the shape error it would otherwise hit.
+        // A star projection that the alias target uses cannot be rendered;
+        // report the projection itself instead of the shape error it would
+        // otherwise hit.
         if (arguments.any { it.type == null } && (blockShape.isFunctionType || isSuspend)) {
             checker.report(
                 function,
-                "The last parameter of @DslChild function $name is a function type with a star projection, which is not supported."
+                "The last parameter of @DslChild function $name has a star-projected type argument, which is not supported."
             )
             return null
         }
@@ -1756,26 +1757,36 @@ class DslProcessor(
                 val alias = current.declaration as? KSTypeAlias ?: break
                 val aliasName = alias.qualifiedName?.asString() ?: break
                 if (!visited.add(aliasName)) break
-                val arguments = current.arguments
                 // A star projection leaves the aliased type parameter without a
-                // value; keeping the alias lets callers reject the type instead
-                // of emitting the unbound parameter. The rest of the chain still
-                // carries its nullability.
-                if (arguments.any { it.type == null }) {
+                // value; it can still be substituted when the alias target does
+                // not use that parameter. Otherwise the alias is kept so callers
+                // can reject the type instead of emitting an unbound parameter.
+                val environment = alias.typeParameters.zip(current.arguments)
+                    .mapNotNull { (parameter, argument) ->
+                        argument.type?.resolve()?.let { parameter to it }
+                    }
+                    .toMap()
+                val target = alias.type.resolve()
+                val substituted = substituteType(target, environment)
+                if (containsTypeParameter(substituted)) {
                     nullable = nullable || aliasTarget(current).isMarkedNullable
                     break
                 }
-                val environment = alias.typeParameters.zip(arguments)
-                    .associate { (parameter, argument) ->
-                        parameter to requireNotNull(argument.type).resolve()
-                    }
-                val target = alias.type.resolve()
-                // Nullability can sit on any link of the alias chain; it must
-                // survive the expansion as a whole.
                 nullable = nullable || target.isMarkedNullable
-                current = substituteType(target, environment)
+                current = substituted
             }
             return if (nullable) current.makeNullable() else current
+        }
+
+        /**
+         * Returns `true` when [type] still mentions a free type parameter, which
+         * means a star projection left an alias parameter without a value and the
+         * expansion is incomplete.
+         */
+        private fun containsTypeParameter(type: KSType): Boolean {
+            return type.declaration is KSTypeParameter || type.arguments.any { argument ->
+                argument.type?.resolve()?.let { containsTypeParameter(it) } == true
+            }
         }
 
         /**
@@ -1839,11 +1850,25 @@ class DslProcessor(
             }
             return try {
                 val shape = aliasTarget(type)
+                if (!isDeclarationVisible(resolved) || !isDeclarationVisible(shape)) {
+                    report(
+                        symbol,
+                        "The type ${typeNameOrNull(resolved) ?: resolved} of ${symbolDescription(symbol)} is not visible from generated code."
+                    )
+                    return null
+                }
+                if (!listOf(type, resolved, shape).all { areTypeAnnotationsVisible(it) }) {
+                    report(
+                        symbol,
+                        "A type-use annotation of ${symbolDescription(symbol)} is not visible from generated code."
+                    )
+                    return null
+                }
                 val isFunction = shape.isFunctionType || shape.isSuspendFunctionType
                 if (isFunction && resolved.arguments.any { it.type == null }) {
                     report(
                         symbol,
-                        "The type of ${symbolDescription(symbol)} is a function type with a star projection, which is not supported."
+                        "The type of ${symbolDescription(symbol)} has a star-projected type argument, which is not supported."
                     )
                     null
                 } else {
@@ -1858,6 +1883,52 @@ class DslProcessor(
                 report(symbol, "The type of ${symbolDescription(symbol)} is unsupported.")
                 null
             }
+        }
+
+        /**
+         * Returns `true` when every declaration referenced by [type] is visible
+         * from the generated file. Type aliases are transparent, so a private
+         * alias can appear in a public DSL while the generated code cannot
+         * reference its name; the caller passes the expanded type, so an alias
+         * that expands to a visible type stays valid.
+         */
+        private fun isDeclarationVisible(type: KSType): Boolean {
+            return isVisible(type.declaration) && type.arguments.all { argument ->
+                argument.type?.resolve()?.let { isDeclarationVisible(it) } != false
+            }
+        }
+
+        /**
+         * Returns `true` when every rendered type-use annotation of [type] is
+         * visible from the generated file. Annotations are copied verbatim, so a
+         * private annotation class cannot be emitted even when the annotated type
+         * itself is public.
+         */
+        private fun areTypeAnnotationsVisible(type: KSType): Boolean {
+            for (annotation in type.annotations) {
+                val declaration = annotation.annotationType.resolve().declaration
+                val qualifiedName = declaration.qualifiedName?.asString()
+                if (qualifiedName in IGNORED_ANNOTATIONS || qualifiedName?.startsWith("kotlin.internal.") == true) {
+                    continue
+                }
+                if (!isVisible(declaration)) return false
+            }
+            return type.arguments.all { argument ->
+                argument.type?.resolve()?.let { areTypeAnnotationsVisible(it) } != false
+            }
+        }
+
+        /**
+         * Returns `true` when [declaration] and its parents are visible at the
+         * package level.
+         */
+        private fun isVisible(declaration: KSDeclaration): Boolean {
+            var current: KSDeclaration? = declaration
+            while (current != null) {
+                if (Modifier.PRIVATE in current.modifiers || Modifier.PROTECTED in current.modifiers) return false
+                current = current.parentDeclaration
+            }
+            return true
         }
 
         /**

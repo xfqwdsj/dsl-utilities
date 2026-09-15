@@ -669,4 +669,29 @@ class AliasHandlingTest {
 
         assertEquals("nullable-any", holder.child.value)
     }
+
+    @Test
+    fun `star projections on unused alias parameters are supported`() {
+        val result = buildPhantomChildScope {
+            child { value = "phantom" }
+        }
+
+        assertEquals("phantom", result.child.value)
+    }
+
+    @Test
+    fun `star aliases that expand to Any accept child scope results`() {
+        val holder = buildGenericAliasAnyHolder {
+            child { value = "generic-any" }
+        }
+
+        assertEquals("generic-any", holder.child.value)
+    }
+
+    @Test
+    fun `private aliases expand to their underlying type`() {
+        val result = buildPrivateAlias(value = "private")
+
+        assertEquals("private", result.value)
+    }
 }

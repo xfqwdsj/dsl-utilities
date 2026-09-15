@@ -622,3 +622,32 @@ interface NullableAliasAnyHolderDsl {
     @DslChild
     fun child(block: PlainChildDsl.() -> Unit = {})
 }
+
+@Suppress("unused")
+typealias PhantomChildBlock<Marker, B> = B.() -> Unit
+
+@DslBuilder
+interface PhantomChildScopeDsl {
+    @DslChild
+    fun child(block: PhantomChildBlock<*, PlainChildDsl> = {})
+}
+
+@Suppress("unused")
+typealias GenericAliasAny<T> = Any
+
+interface GenericAliasAnyHolder {
+    val child: GenericAliasAny<*>
+}
+
+@DslBuilder(supertype = GenericAliasAnyHolder::class, resultName = "GenericAliasAnyHolderResult")
+interface GenericAliasAnyHolderDsl {
+    @DslChild
+    fun child(block: PlainChildDsl.() -> Unit = {})
+}
+
+private typealias PrivatePlainAlias = String
+
+@DslBuilder
+interface PrivateAliasDsl {
+    val value: PrivatePlainAlias
+}
