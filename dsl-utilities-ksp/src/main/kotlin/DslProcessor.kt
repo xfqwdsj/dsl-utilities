@@ -1153,7 +1153,11 @@ class DslProcessor(
             }
             scopeParameters += Parameter(parameterName, parameterTypeName)
         }
-        val blockTypeName = checker.renderTypeName(function, blockType, declaredBlockType) ?: return null
+        val blockTypeName = checker.renderTypeName(
+            function,
+            checker.substituteType(declaredBlockType, environment),
+            declaredBlockType,
+        ) ?: return null
         return ChildScope(name, scopeParameters, blockName, blockTypeName, child)
     }
 
