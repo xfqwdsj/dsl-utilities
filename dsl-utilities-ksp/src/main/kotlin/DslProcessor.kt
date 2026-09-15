@@ -1064,10 +1064,12 @@ class DslProcessor(
             checker.substituteType(checker.expandAliases(declaredBlockType), environment)
         }
         val arguments = blockType.arguments
-        // A star projection that the alias target uses cannot be rendered;
-        // report the projection itself instead of the shape error it would
-        // otherwise hit.
-        if (arguments.any { it.type == null } && (blockShape.isFunctionType || isSuspend)) {
+        // A star projection that the alias target uses cannot be rendered; a
+        // kept alias always carries one somewhere in its chain. Report the
+        // projection itself instead of the shape error it would otherwise hit.
+        val hasUnboundProjection =
+            blockType.declaration is KSTypeAlias || arguments.any { it.type == null }
+        if (hasUnboundProjection && (blockShape.isFunctionType || isSuspend)) {
             checker.report(
                 function,
                 "The last parameter of @DslChild function $name has a star-projected type argument, which is not supported."
@@ -1859,7 +1861,15 @@ class DslProcessor(
          * the perspective of the analyzed class, which [substituteType] provides
          * for members inherited from generic bases.
          */
-        fun renderTypeName(symbol: KSNode, type: KSType): TypeName? {
+        fun renderTypeName(symbol: KSNode, type: KSType): TypeName? = renderTypeName(symbol, type, null)
+
+        /**
+         * Renders [type] and carries the type-use annotations of [annotationsFrom]
+         * onto the positions it substantiates. An alias target can annotate a
+         * type parameter usage, and substitution replaces that usage without its
+         * annotations, so the unsubstituted type supplies them while rendering.
+         */
+        private fun renderTypeName(symbol: KSNode, type: KSType, annotationsFrom: KSType?): TypeName? {
             val resolved = expandAliases(type)
             if (resolved.isError) {
                 reportUnresolved(symbol, "The type of ${symbolDescription(symbol)} is not resolvable yet.")
@@ -1874,7 +1884,8 @@ class DslProcessor(
                     )
                     return null
                 }
-                if (!listOf(type, resolved, shape).all { areTypeAnnotationsVisible(it) }) {
+                val annotationSources = listOfNotNull(type, resolved, shape, annotationsFrom)
+                if (!annotationSources.all { areTypeAnnotationsVisible(it) }) {
                     report(
                         symbol,
                         "A type-use annotation of ${symbolDescription(symbol)} or one of its arguments is not visible from generated code."
@@ -1882,7 +1893,12 @@ class DslProcessor(
                     return null
                 }
                 val isFunction = shape.isFunctionType || shape.isSuspendFunctionType
-                if (isFunction && resolved.arguments.any { it.type == null }) {
+                // A kept alias is the result of an unbound star projection
+                // anywhere in the chain, so it cannot be rendered as a function
+                // type even when its own arguments carry no star.
+                val hasUnboundProjection =
+                    resolved.declaration is KSTypeAlias || resolved.arguments.any { it.type == null }
+                if (isFunction && hasUnboundProjection) {
                     report(
                         symbol,
                         "The type of ${symbolDescription(symbol)} has a star-projected type argument, which is not supported."
@@ -1890,11 +1906,11 @@ class DslProcessor(
                     null
                 } else {
                     val rendered = if (isFunction) {
-                        lambdaTypeName(symbol, resolved, shape)
+                        lambdaTypeName(symbol, resolved, shape, annotationsFrom)
                     } else {
-                        classifierTypeName(symbol, resolved)
+                        classifierTypeName(symbol, resolved, shape, annotationsFrom)
                     }
-                    rendered.annotated(listOf(type, resolved, shape), ignoreExtensionMarker = isFunction)
+                    rendered.annotated(annotationSources, ignoreExtensionMarker = isFunction)
                 }
             } catch (_: Exception) {
                 report(symbol, "The type of ${symbolDescription(symbol)} is unsupported.")
@@ -1906,12 +1922,19 @@ class DslProcessor(
          * Renders a classifier type, keeping the type-use annotations of its
          * arguments which KotlinPoet's KSP bridge would otherwise drop.
          */
-        private fun classifierTypeName(symbol: KSNode, type: KSType): TypeName {
+        private fun classifierTypeName(
+            symbol: KSNode,
+            type: KSType,
+            shape: KSType,
+            annotationsFrom: KSType?,
+        ): TypeName {
             val declared = type.toTypeName()
             val rawType = (declared as? ParameterizedTypeName)?.rawType ?: return declared
-            val arguments = type.arguments.map { argument ->
-                val reference = argument.type ?: return@map STAR
-                val argumentName = renderTypeName(symbol, reference.resolve()) ?: return@map STAR
+            val carried = carriedArguments(annotationsFrom ?: shape, type)
+            val arguments = type.arguments.mapIndexed { index, argument ->
+                val reference = argument.type ?: return@mapIndexed STAR
+                val argumentName = renderTypeName(symbol, reference.resolve(), carried.getOrNull(index))
+                    ?: return@mapIndexed STAR
                 when (argument.variance) {
                     Variance.COVARIANT -> WildcardTypeName.producerOf(argumentName)
                     Variance.CONTRAVARIANT -> WildcardTypeName.consumerOf(argumentName)
@@ -1920,6 +1943,19 @@ class DslProcessor(
                 }
             }
             return rawType.parameterizedBy(arguments).copy(nullable = declared.isNullable)
+        }
+
+        /**
+         * Returns the argument types of [source] when it has the same classifier
+         * and arity as [target], so annotations can be carried positionally.
+         */
+        private fun carriedArguments(source: KSType?, target: KSType): List<KSType?> {
+            if (source == null) return emptyList()
+            if (source.declaration.qualifiedName?.asString() != target.declaration.qualifiedName?.asString()) {
+                return emptyList()
+            }
+            if (source.arguments.size != target.arguments.size) return emptyList()
+            return source.arguments.map { it.type?.resolve() }
         }
 
         /**
@@ -1995,18 +2031,21 @@ class DslProcessor(
          * type that carries the receiver and suspend markers dropped by
          * substitution.
          */
-        private fun lambdaTypeName(symbol: KSNode, type: KSType, shape: KSType): TypeName {
+        private fun lambdaTypeName(symbol: KSNode, type: KSType, shape: KSType, annotationsFrom: KSType?): TypeName {
             val arguments = type.arguments
+            val carried = carriedArguments(annotationsFrom ?: shape, type)
             val isExtension = shape.annotations.any { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }
             val receiver = if (isExtension) {
-                arguments.firstOrNull()?.type?.resolve()?.let { renderTypeName(symbol, it) }
+                arguments.firstOrNull()?.type?.resolve()?.let { renderTypeName(symbol, it, carried.getOrNull(0)) }
             } else {
                 null
             }
+            val valueStart = if (isExtension) 1 else 0
             val valueArguments = if (isExtension) arguments.drop(1) else arguments
-            val parameters = valueArguments.dropLast(1).map { argument ->
+            val parameters = valueArguments.dropLast(1).mapIndexed { index, argument ->
                 val argumentType = argument.type?.resolve()
-                val typeName = argumentType?.let { renderTypeName(symbol, it) } ?: ANY.copy(nullable = true)
+                val typeName = argumentType?.let { renderTypeName(symbol, it, carried.getOrNull(valueStart + index)) }
+                    ?: ANY.copy(nullable = true)
                 val name = argumentType?.annotations
                     ?.firstOrNull { it.shortName.asString() == PARAMETER_NAME }
                     ?.arguments
@@ -2015,7 +2054,7 @@ class DslProcessor(
                 if (name == null) ParameterSpec.unnamed(typeName) else ParameterSpec.builder(name, typeName).build()
             }
             val returnType = valueArguments.lastOrNull()?.type?.resolve()
-                ?.let { renderTypeName(symbol, it) }
+                ?.let { renderTypeName(symbol, it, carried.getOrNull(arguments.lastIndex)) }
                 ?: UNIT
             return LambdaTypeName.get(receiver = receiver, parameters = parameters, returnType = returnType)
                 .copy(nullable = type.isMarkedNullable, suspending = shape.isSuspendFunctionType)
