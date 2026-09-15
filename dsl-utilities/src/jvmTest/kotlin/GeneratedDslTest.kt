@@ -613,12 +613,35 @@ class AliasHandlingTest {
             .walkTopDown()
             .firstOrNull { it.name == "AliasedMarkedIntsDslBuilder.kt" }
         assertNotNull(builder, "AliasedMarkedIntsDslBuilder.kt was not generated")
-        assertTrue(builder.readText().contains("@MaxBytes"), "the list container annotation was dropped")
+        val text = builder.readText()
+        assertTrue(
+            text.contains("override var values: @MaxBytes(atMost = 5.toByte()) MutableList<Int>"),
+            text,
+        )
+        assertTrue(text.contains("public val values: List<Int>"), text)
 
         val result = buildAliasedMarkedInts {
             values.add(1)
         }
 
         assertEquals(listOf(1), result.values)
+    }
+
+    @Test
+    fun `aliased Any supertype properties accept child scope results`() {
+        val holder = buildAliasAnyHolder {
+            child { value = "aliased" }
+        }
+
+        assertEquals("aliased", holder.child.value)
+    }
+
+    @Test
+    fun `bare type parameter child blocks bind after substitution`() {
+        val result = buildBareChildParameter {
+            child { intensity = 0.6f }
+        }
+
+        assertEquals(0.6f, result.child.intensity)
     }
 }

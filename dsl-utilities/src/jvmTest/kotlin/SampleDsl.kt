@@ -572,10 +572,30 @@ interface NullableBlockSpecDsl
 fun buildNullableBlockSpec(block: (NullableBlockSpecDsl.() -> Unit)?) {
 }
 
-typealias MarkedIntListAlias = @MaxBytes(5) MutableList<Int>
+typealias MarkedIntListAlias<T> = @MaxBytes(5) MutableList<T>
 
 @DslBuilder
 interface AliasedMarkedIntsDsl {
     @DslList
-    var values: MarkedIntListAlias
+    var values: MarkedIntListAlias<Int>
 }
+
+typealias AliasAny = Any
+
+interface AliasAnyHolder {
+    val child: AliasAny
+}
+
+@DslBuilder(supertype = AliasAnyHolder::class, resultName = "AliasAnyHolderResult")
+interface AliasAnyHolderDsl {
+    @DslChild
+    fun child(block: PlainChildDsl.() -> Unit = {})
+}
+
+interface BareChildParameterBase<B> {
+    @DslChild
+    fun child(block: B)
+}
+
+@DslBuilder
+interface BareChildParameterDsl : BareChildParameterBase<TransientEventDsl.() -> Unit>
