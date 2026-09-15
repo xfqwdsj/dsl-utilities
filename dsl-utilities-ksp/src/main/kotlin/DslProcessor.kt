@@ -657,7 +657,7 @@ class DslProcessor(
                     .addModifiers(visibility, KModifier.INLINE)
                     .receiver(classNameOf(specQualifiedName))
                     .apply {
-                        for (required in child.required) addParameter(required.name, required.typeName)
+                        for (required in child.required) addParameter(requiredParameter(required))
                     }
                     .addParameter(
                         ParameterSpec.builder(
@@ -717,7 +717,7 @@ class DslProcessor(
             .addModifiers(visibility, KModifier.INLINE)
             .apply {
                 for (property in requiredProperties) {
-                    addParameter(ParameterSpec.builder(property.name, property.typeName).build())
+                    addParameter(requiredParameter(property))
                 }
             }
             .addParameter(
@@ -734,6 +734,21 @@ class DslProcessor(
             .addStatement("return %N.build()", builderName)
             .build()
     }
+
+    /**
+     * Builds the parameter of a required property for the generated
+     * inline entry points. A function-typed parameter cannot be passed
+     * to the non-inline builder call from an inline function, so it is
+     * `noinline`; a nullable function type requires that modifier as well.
+     */
+    private fun requiredParameter(property: RequiredProperty): ParameterSpec =
+        ParameterSpec.builder(property.name, property.typeName)
+            .apply {
+                if (property.type.isFunctionType || property.type.isSuspendFunctionType) {
+                    addModifiers(KModifier.NOINLINE)
+                }
+            }
+            .build()
 
     /**
      * Builds escaped `name = name` constructor arguments for required
@@ -1753,39 +1768,41 @@ class DslProcessor(
             var current = type
             var nullable = type.isMarkedNullable
             val visited = mutableSetOf<String>()
+            val unboundParameters = mutableSetOf<KSTypeParameter>()
             while (!current.isError) {
                 val alias = current.declaration as? KSTypeAlias ?: break
                 val aliasName = alias.qualifiedName?.asString() ?: break
                 if (!visited.add(aliasName)) break
-                // A star projection leaves the aliased type parameter without a
-                // value; it can still be substituted when the alias target does
-                // not use that parameter. Otherwise the alias is kept so callers
-                // can reject the type instead of emitting an unbound parameter.
+                // A star projection has no type to substitute. Track it and keep
+                // expanding: a later alias can bind the parameter or drop it. If
+                // the fully expanded type still mentions it, the alias is kept so
+                // callers can reject the unbound parameter.
+                alias.typeParameters.zip(current.arguments)
+                    .filter { (_, argument) -> argument.type == null }
+                    .mapTo(unboundParameters) { (parameter, _) -> parameter }
                 val environment = alias.typeParameters.zip(current.arguments)
                     .mapNotNull { (parameter, argument) ->
                         argument.type?.resolve()?.let { parameter to it }
                     }
                     .toMap()
                 val target = alias.type.resolve()
-                val substituted = substituteType(target, environment)
-                if (containsTypeParameter(substituted)) {
-                    nullable = nullable || aliasTarget(current).isMarkedNullable
-                    break
-                }
                 nullable = nullable || target.isMarkedNullable
-                current = substituted
+                current = substituteType(target, environment)
+            }
+            if (unboundParameters.isNotEmpty() && containsParameter(current, unboundParameters)) {
+                nullable = nullable || aliasTarget(type).isMarkedNullable
+                return if (nullable) type.makeNullable() else type
             }
             return if (nullable) current.makeNullable() else current
         }
 
         /**
-         * Returns `true` when [type] still mentions a free type parameter, which
-         * means a star projection left an alias parameter without a value and the
-         * expansion is incomplete.
+         * Returns `true` when [type] mentions one of the type parameters in
+         * [parameters].
          */
-        private fun containsTypeParameter(type: KSType): Boolean {
-            return type.declaration is KSTypeParameter || type.arguments.any { argument ->
-                argument.type?.resolve()?.let { containsTypeParameter(it) } == true
+        private fun containsParameter(type: KSType, parameters: Set<KSTypeParameter>): Boolean {
+            return type.declaration in parameters || type.arguments.any { argument ->
+                argument.type?.resolve()?.let { containsParameter(it, parameters) } == true
             }
         }
 
@@ -1860,7 +1877,7 @@ class DslProcessor(
                 if (!listOf(type, resolved, shape).all { areTypeAnnotationsVisible(it) }) {
                     report(
                         symbol,
-                        "A type-use annotation of ${symbolDescription(symbol)} is not visible from generated code."
+                        "A type-use annotation of ${symbolDescription(symbol)} or one of its arguments is not visible from generated code."
                     )
                     return null
                 }
@@ -1875,7 +1892,7 @@ class DslProcessor(
                     val rendered = if (isFunction) {
                         lambdaTypeName(symbol, resolved, shape)
                     } else {
-                        resolved.toTypeName()
+                        classifierTypeName(symbol, resolved)
                     }
                     rendered.annotated(listOf(type, resolved, shape), ignoreExtensionMarker = isFunction)
                 }
@@ -1883,6 +1900,26 @@ class DslProcessor(
                 report(symbol, "The type of ${symbolDescription(symbol)} is unsupported.")
                 null
             }
+        }
+
+        /**
+         * Renders a classifier type, keeping the type-use annotations of its
+         * arguments which KotlinPoet's KSP bridge would otherwise drop.
+         */
+        private fun classifierTypeName(symbol: KSNode, type: KSType): TypeName {
+            val declared = type.toTypeName()
+            val rawType = (declared as? ParameterizedTypeName)?.rawType ?: return declared
+            val arguments = type.arguments.map { argument ->
+                val reference = argument.type ?: return@map STAR
+                val argumentName = renderTypeName(symbol, reference.resolve()) ?: return@map STAR
+                when (argument.variance) {
+                    Variance.COVARIANT -> WildcardTypeName.producerOf(argumentName)
+                    Variance.CONTRAVARIANT -> WildcardTypeName.consumerOf(argumentName)
+                    Variance.STAR -> STAR
+                    Variance.INVARIANT -> argumentName
+                }
+            }
+            return rawType.parameterizedBy(arguments).copy(nullable = declared.isNullable)
         }
 
         /**
@@ -1902,7 +1939,8 @@ class DslProcessor(
          * Returns `true` when every rendered type-use annotation of [type] is
          * visible from the generated file. Annotations are copied verbatim, so a
          * private annotation class cannot be emitted even when the annotated type
-         * itself is public.
+         * itself is public. Only the annotations of [type] itself are checked
+         * here; its parts are rendered through [renderTypeName] and checked there.
          */
         private fun areTypeAnnotationsVisible(type: KSType): Boolean {
             for (annotation in type.annotations) {
@@ -1912,10 +1950,28 @@ class DslProcessor(
                     continue
                 }
                 if (!isVisible(declaration)) return false
+                if (!areAnnotationArgumentsVisible(annotation)) return false
             }
-            return type.arguments.all { argument ->
-                argument.type?.resolve()?.let { areTypeAnnotationsVisible(it) } != false
-            }
+            return true
+        }
+
+        /**
+         * Returns `true` when every declaration referenced by an annotation
+         * argument is visible from the generated file. Enum constants and
+         * `::class` arguments are copied verbatim.
+         */
+        private fun areAnnotationArgumentsVisible(annotation: KSAnnotation): Boolean =
+            annotation.arguments.all { argument -> isAnnotationValueVisible(argument.value) }
+
+        private fun isAnnotationValueVisible(value: Any?): Boolean = when (value) {
+            is KSType -> isDeclarationVisible(value) && areTypeAnnotationsVisible(value)
+            is KSDeclaration -> isVisible(value)
+            is KSAnnotation ->
+                isDeclarationVisible(value.annotationType.resolve()) && areAnnotationArgumentsVisible(value)
+
+            is List<*> -> value.all { isAnnotationValueVisible(it) }
+            is Array<*> -> value.all { isAnnotationValueVisible(it) }
+            else -> true
         }
 
         /**
