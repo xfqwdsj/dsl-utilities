@@ -800,6 +800,57 @@ class AliasHandlingTest {
     }
 
     @Test
+    fun `annotations on intermediate alias links render the alias by name`() {
+        val linkedBuilder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "LinkedAnnotationDslBuilder.kt" }
+        assertNotNull(linkedBuilder, "LinkedAnnotationDslBuilder.kt was not generated")
+        assertTrue(linkedBuilder.readText().contains("LinkedAnnotationOuter<Int>"), linkedBuilder.readText())
+
+        val topBuilder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "TopTargetAnnotationDslBuilder.kt" }
+        assertNotNull(topBuilder, "TopTargetAnnotationDslBuilder.kt was not generated")
+        assertTrue(topBuilder.readText().contains("TopTargetAnnotationLink<Int>"), topBuilder.readText())
+
+        val linked = buildLinkedAnnotation(value = listOf(1))
+        val top = buildTopTargetAnnotation(value = listOf(2))
+
+        assertEquals(listOf(1), linked.value)
+        assertEquals(listOf(2), top.value)
+    }
+
+    @Test
+    fun `repeated annotations of one source stay repeated`() {
+        val builder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "RepeatedAnnotationDslBuilder.kt" }
+        assertNotNull(builder, "RepeatedAnnotationDslBuilder.kt was not generated")
+        val text = builder.readText()
+        val occurrences = Regex("@RepeatTypeMark").findAll(text).count()
+        assertEquals(6, occurrences, text)
+    }
+
+    @Test
+    fun `annotations in nested wrappers are carried`() {
+        val builder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "NestedWrappedDslBuilder.kt" }
+        assertNotNull(builder, "NestedWrappedDslBuilder.kt was not generated")
+        val text = builder.readText()
+        assertTrue(text.contains("Map<String, List<@MaxBytes(atMost = 20.toByte()) Int>>"), text)
+        assertTrue(text.contains("List<List<List<@MaxBytes(atMost = 20.toByte()) Int>>>"), text)
+
+        val result = buildNestedWrapped(
+            map = mapOf("key" to listOf(1)),
+            triple = listOf(listOf(listOf(2))),
+        )
+
+        assertEquals(mapOf("key" to listOf(1)), result.map)
+        assertEquals(listOf(listOf(listOf(2))), result.triple)
+    }
+
+    @Test
     fun `required function type properties are noinline in generated entry points`() {
         var seen: String? = null
         val result = buildFunctionRequired(callback = { seen = it })

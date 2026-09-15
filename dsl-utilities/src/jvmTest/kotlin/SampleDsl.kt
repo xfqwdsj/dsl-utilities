@@ -727,6 +727,42 @@ interface WrappedDsl {
     val value: List<WrappedAlias<Int>>
 }
 
+typealias LinkedAnnotationInner<T> = List<T>
+
+typealias LinkedAnnotationOuter<T> = LinkedAnnotationInner<@MaxBytes(43) T>
+
+@DslBuilder
+interface LinkedAnnotationDsl {
+    val value: LinkedAnnotationOuter<Int>
+}
+
+typealias MidTargetAnnotation<T> = @MaxBytes(72) List<T>
+
+typealias TopTargetAnnotationLink<T> = @TypeMark MidTargetAnnotation<T>
+
+@DslBuilder
+interface TopTargetAnnotationDsl {
+    val value: TopTargetAnnotationLink<Int>
+}
+
+@Repeatable
+@Target(AnnotationTarget.TYPE)
+annotation class RepeatTypeMark(val value: Int)
+
+typealias RepeatedAnnotationAlias<T> = @RepeatTypeMark(5) @RepeatTypeMark(5) List<T>
+
+@DslBuilder
+interface RepeatedAnnotationDsl {
+    val value: RepeatedAnnotationAlias<Int>
+}
+
+@DslBuilder
+interface NestedWrappedDsl {
+    val map: Map<String, WrappedAlias<Int>>
+
+    val triple: List<List<WrappedAlias<Int>>>
+}
+
 @DslBuilder
 interface FunctionRequiredDsl {
     val callback: (String) -> Unit
