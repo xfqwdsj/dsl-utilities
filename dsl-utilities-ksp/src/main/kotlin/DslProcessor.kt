@@ -1,6 +1,9 @@
 package top.ltfan.dslutilities.ksp
 
 import com.google.devtools.ksp.KspExperimental
+import com.google.devtools.ksp.getDeclaredProperties
+import com.google.devtools.ksp.getAllSuperTypes
+import com.google.devtools.ksp.isAbstract
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 import com.google.devtools.ksp.validate
@@ -846,6 +849,18 @@ class DslProcessor(
     private fun ChildScope.nameField(): String = fieldName
 
     /**
+     * Returns whether [declaration] or one of its supertypes declares an
+     * abstract property named [name].
+     */
+    private fun requiresProperty(declaration: KSClassDeclaration, name: String): Boolean =
+        (sequenceOf(declaration.asStarProjectedType()) + declaration.getAllSuperTypes())
+            .mapNotNull { it.declaration as? KSClassDeclaration }
+            .distinct()
+            .any { current ->
+                current.getDeclaredProperties().any { it.isAbstract() && it.simpleName.asString() == name }
+            }
+
+    /**
      * Resolves a fully qualified name into a [ClassName]; nested classes
      * are expressed through their nesting so generated code references them
      * without package-level ambiguity.
@@ -1159,7 +1174,12 @@ class DslProcessor(
             return null
         }
         if ((!blockShape.isFunctionType && !isSuspend) || arguments.size != (if (isReceiverStyle) 2 else 1)) {
-            val misplacedBlock = !blockShape.isFunctionType && !isSuspend &&
+            // The dedicated message fits when a leading parameter is the
+            // misplaced block: its receiver is a DslBuilder interface that
+            // requires the last parameter. Otherwise the last parameter is
+            // most likely the block itself with a type that does not fit.
+            val lastParameterName = parameters.lastOrNull()?.name?.asString()
+            val misplacedBlock = !blockShape.isFunctionType && !isSuspend && lastParameterName != null &&
                     parameters.dropLast(1).any { parameter ->
                         val declaredParameterType = parameter.type.resolve()
                         val parameterShape = checker.aliasTarget(
@@ -1169,10 +1189,17 @@ class DslProcessor(
                                 declaredParameterType
                             }
                         )
-                        parameterShape.isFunctionType &&
-                                parameterShape.annotations.any { it.shortName.asString() == EXTENSION_FUNCTION_TYPE } &&
-                                (parameterShape.arguments.firstOrNull()?.type?.resolve()?.declaration as? KSClassDeclaration)
-                                    ?.annotation(DSL_BUILDER_ANNOTATION) != null
+                        if (
+                            !parameterShape.isFunctionType ||
+                            parameterShape.annotations.none { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }
+                        ) {
+                            return@any false
+                        }
+                        val receiverType = parameterShape.arguments.firstOrNull()?.type?.resolve() ?: return@any false
+                        val receiver = checker.expandAliases(receiverType).declaration as? KSClassDeclaration
+                            ?: return@any false
+                        receiver.annotation(DSL_BUILDER_ANNOTATION) != null &&
+                                requiresProperty(receiver, lastParameterName)
                     }
             checker.report(
                 function,
