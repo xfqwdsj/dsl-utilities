@@ -974,3 +974,32 @@ class nestedContainer {
         var nested: String
     }
 }
+
+@Suppress("ClassName")
+class build : DslMapper<Int, String> {
+    override fun toStored(value: String): Int = value.toInt()
+
+    override fun toValue(stored: Int): String = stored.toString()
+}
+
+@DslBuilder
+interface BuildMapperNameDsl {
+    @DslValue(initial = "1", mapper = build::class)
+    var value: String
+}
+
+@Suppress("ClassName")
+class element {
+    object Validator : DslValidator<Int> {
+        override fun validate(value: Int) = value >= 0
+    }
+}
+
+@DslBuilder
+interface NestedValidatorShadowDsl {
+    @DslList(validator = element.Validator::class)
+    var values: MutableList<Int>
+}
+
+@Suppress("unused", "ClassName")
+class newValueRef

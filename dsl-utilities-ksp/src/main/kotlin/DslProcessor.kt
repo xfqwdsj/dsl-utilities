@@ -341,7 +341,10 @@ class DslProcessor(
             }
             addAll(GENERATED_LOCAL_NAMES)
         }
-        val context = FileContext(shadowedNames)
+        val context = FileContext(
+            shadowedNames,
+            declarationsInPackage(resolver, packageName).mapTo(mutableSetOf()) { it.simpleName.asString() },
+        )
 
         val builderTypeName = names.builderType(packageName)
         val resultTypeName = names.resultType(packageName)
@@ -2671,6 +2674,7 @@ class DslProcessor(
      */
     private class FileContext(
         private val shadowedNames: Set<String>,
+        private val packageNames: Set<String>,
     ) {
         private val aliases = mutableListOf<AliasRequest>()
         private val aliasNames = mutableMapOf<String, String>()
@@ -2680,11 +2684,14 @@ class DslProcessor(
         /**
          * Renders a reference to [type] as an expression. The name stays with
          * KotlinPoet, which escapes it and manages its import; a name that is in
-         * scope in the generated file receives an alias instead.
+         * scope in the generated file receives an alias instead. Nested types
+         * are matched through their top-level class name, which is the name the
+         * rendered reference starts with.
          */
         fun expression(type: ClassName, construct: Boolean = false): CodeBlock {
             val code = if (construct) CodeBlock.of("%T()", type) else CodeBlock.of("%T", type)
-            if (!isShadowed(type.simpleName)) return code
+            val topLevelName = type.topLevelClassName().simpleName
+            if (!isShadowed(type.simpleName) && !isShadowed(topLevelName)) return code
             aliasOf(type)
             return code
         }
@@ -2697,7 +2704,7 @@ class DslProcessor(
             aliasNames.getOrPut(type.canonicalName) {
                 var index = 2
                 var candidate = "${type.simpleName}Ref"
-                while (candidate in shadowedNames || candidate in aliasNames.values) {
+                while (candidate in shadowedNames || candidate in packageNames || candidate in aliasNames.values) {
                     candidate = "${type.simpleName}Ref${index++}"
                 }
                 aliases += AliasRequest(type, candidate)
@@ -2857,8 +2864,8 @@ class DslProcessor(
         )
 
         /**
-         * Local names declared by generated function bodies; a reference that
-         * reuses one of them receives an aliased import.
+         * Local and member names that generated function bodies declare; a
+         * reference that reuses one of them receives an aliased import.
          */
         val GENERATED_LOCAL_NAMES = setOf(
             "newValue",
@@ -2868,6 +2875,7 @@ class DslProcessor(
             "childBuilder",
             "block",
             "builder",
+            "build",
         )
 
         const val EXTENSION_FUNCTION_TYPE = "ExtensionFunctionType"

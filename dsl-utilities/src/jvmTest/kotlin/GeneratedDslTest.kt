@@ -1057,4 +1057,32 @@ class AliasHandlingTest {
         val result = buildnestedSpec { nested = "value" }
         assertEquals("value", result.nested)
     }
+
+    @Test
+    fun `mapper classes named build are referenced safely`() {
+        val result = buildBuildMapperName { value = "3" }
+        assertEquals("3", result.value)
+    }
+
+    @Test
+    fun `nested validator containers shadowed by locals are aliased`() {
+        val result = buildNestedValidatorShadow { values = mutableListOf(1, 2) }
+        assertEquals(listOf(1, 2), result.values)
+
+        assertFailsWith<IllegalArgumentException> {
+            buildNestedValidatorShadow { values = mutableListOf(-1) }
+        }
+    }
+
+    @Test
+    fun `aliases avoid declarations in the same package`() {
+        val builder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "ShadowedValidatorDslBuilder.kt" }
+        assertNotNull(builder, "ShadowedValidatorDslBuilder.kt was not generated")
+        assertTrue(builder.readText().contains("as newValueRef2"), builder.readText())
+
+        val result = buildShadowedValidator { value = 6 }
+        assertEquals(6, result.value)
+    }
 }
