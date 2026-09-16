@@ -1,6 +1,6 @@
 package top.ltfan.dslutilities.test
 
-import top.ltfan.dslutilities.test.other.toList
+import top.ltfan.dslutilities.test.collision.toList
 import kotlin.test.*
 
 class SampleDslTest {
