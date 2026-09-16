@@ -950,4 +950,29 @@ class AliasHandlingTest {
         assertEquals(1, holder.items.size)
         assertNotNull((holder.items.single() as FunctionChild).callback)
     }
+
+    @Test
+    fun `child scope parameters do not shadow the generated backing field`() {
+        val blockName = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "ShadowingBlockNameDslBuilder.kt" }
+        assertNotNull(blockName, "ShadowingBlockNameDslBuilder.kt was not generated")
+        assertTrue(blockName.readText().contains("childField2"), blockName.readText())
+
+        val valueName = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "ShadowingValueNameDslBuilder.kt" }
+        assertNotNull(valueName, "ShadowingValueNameDslBuilder.kt was not generated")
+        assertTrue(valueName.readText().contains("childField2"), valueName.readText())
+
+        val block = buildShadowingBlockName {
+            child { }
+        }
+        assertNotNull(block.child)
+
+        val value = buildShadowingValueName {
+            child(childField = 3) { }
+        }
+        assertEquals(3, value.child.childField)
+    }
 }
