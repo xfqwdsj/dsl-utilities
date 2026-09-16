@@ -1036,3 +1036,15 @@ interface MultilineInitialDsl {
     @DslValue(initial = "first\nsecond")
     var text: String
 }
+
+@DslBuilder
+interface NegativeBoundaryInitialDsl {
+    @DslValue(initial = "-32768")
+    var short: Short
+
+    @DslValue(initial = "-128")
+    var byte: Byte
+
+    @DslValue(initial = "-9223372036854775808")
+    var long: Long
+}

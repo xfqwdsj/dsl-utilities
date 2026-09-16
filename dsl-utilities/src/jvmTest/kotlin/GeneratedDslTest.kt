@@ -1118,4 +1118,12 @@ class AliasHandlingTest {
         val result = buildMultilineInitial { }
         assertEquals("first\nsecond", result.text)
     }
+
+    @Test
+    fun `negative boundary initial values are rendered as literals`() {
+        val result = buildNegativeBoundaryInitial { }
+        assertEquals(Short.MIN_VALUE, result.short)
+        assertEquals(Byte.MIN_VALUE, result.byte)
+        assertEquals(Long.MIN_VALUE, result.long)
+    }
 }

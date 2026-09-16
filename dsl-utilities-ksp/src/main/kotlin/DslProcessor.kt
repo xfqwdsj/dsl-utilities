@@ -2523,7 +2523,9 @@ class DslProcessor(
 
         /**
          * Renders a compile-time constant written in string form as a Kotlin
-         * literal expression of the property type.
+         * literal expression of the property type. String constants are rendered
+         * by KotlinPoet, which normalizes their line endings and trims a trailing
+         * newline in property initializers.
          */
         fun literal(property: KSPropertyDeclaration, propertyName: String, initial: String, type: KSType): CodeBlock? {
             fun fail(detail: String): CodeBlock? {
@@ -2539,13 +2541,16 @@ class DslProcessor(
                     ?.let { number(it.toString()) }
                     ?: fail("not an Int constant")
 
-                "kotlin.Long" -> initial.toLongOrNull()?.let { number("${it}L") } ?: fail("not a Long constant")
+                "kotlin.Long" -> initial.toLongOrNull()?.let {
+                    number(if (it == Long.MIN_VALUE) "Long.MIN_VALUE" else "${it}L")
+                } ?: fail("not a Long constant")
+
                 "kotlin.Short" -> initial.toLongOrNull()?.takeIf { it in Short.MIN_VALUE..Short.MAX_VALUE }
-                    ?.let { number("$it.toShort()") }
+                    ?.let { number(if (it < 0) "($it).toShort()" else "$it.toShort()") }
                     ?: fail("not a Short constant")
 
                 "kotlin.Byte" -> initial.toLongOrNull()?.takeIf { it in Byte.MIN_VALUE..Byte.MAX_VALUE }
-                    ?.let { number("$it.toByte()") }
+                    ?.let { number(if (it < 0) "($it).toByte()" else "$it.toByte()") }
                     ?: fail("not a Byte constant")
 
                 "kotlin.Double" -> initial.toDoubleOrNull()?.takeIf(Double::isFinite)
