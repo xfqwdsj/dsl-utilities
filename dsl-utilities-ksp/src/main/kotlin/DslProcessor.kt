@@ -3,6 +3,7 @@ package top.ltfan.dslutilities.ksp
 import com.google.devtools.ksp.KspExperimental
 import com.google.devtools.ksp.getDeclaredProperties
 import com.google.devtools.ksp.getAllSuperTypes
+import com.google.devtools.ksp.getVisibility
 import com.google.devtools.ksp.isAbstract
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
@@ -38,7 +39,7 @@ class DslProcessor(
     override fun process(resolver: Resolver): List<KSAnnotated> {
         packageDeclarations = null
         val deferred = mutableListOf<KSAnnotated>()
-        for (symbol in resolver.getSymbolsWithAnnotation("top.ltfan.dslutilities.DslBuilder")) {
+        for (symbol in resolver.getSymbolsWithAnnotation(DSL_BUILDER_ANNOTATION)) {
             // KSP's validation covers unresolved declarations referenced from
             // the annotated symbol, including types produced by other
             // processors in a later round.
@@ -303,65 +304,42 @@ class DslProcessor(
             )
         )
 
-        // The names that already exist in the generated file must not be
-        // reused by generated backing fields.
-        val allocator = NameAllocator()
-        specMemberNames.forEach { allocator.newName(it) }
-        allocator.newName(names.builderName)
-        allocator.newName(names.resultName)
-        if (names.functionName.isNotEmpty()) allocator.newName(names.functionName)
+        // Every generated name is registered in the file context, which backs
+        // both the uniqueness of generated names and the aliasing of
+        // references that would otherwise be captured.
+        val context = FileContext(
+            declarationsInPackage(resolver, packageName).mapTo(mutableSetOf()) { it.simpleName.asString() },
+        )
+        specMemberNames.forEach(context::register)
+        context.register(names.builderName)
+        context.register(names.resultName)
+        if (names.functionName.isNotEmpty()) context.register(names.functionName)
         for (property in listProperties) {
-            for (child in property.children) allocator.newName(child.functionName)
+            for (child in property.children) context.register(child.functionName)
         }
         for (property in valueProperties) {
-            property.fieldName = allocator.newName("${property.name}Field")
+            property.fieldName = context.fileName("${property.name}Field")
         }
         for (property in listProperties) {
-            property.fieldName = allocator.newName("${property.name}Field")
+            property.fieldName = context.fileName("${property.name}Field")
         }
         for (scope in childScopes) {
             // The scope parameters and the block name are in scope inside the
             // generated child function, so the backing field must not reuse
             // one of them.
-            val scopeNames = allocator.copy()
+            scope.parameters.forEach { context.register(it.name) }
+            context.register(scope.blockName)
+            val scopeNames = NameAllocator()
             scope.parameters.forEach { scopeNames.newName(it.name) }
             scopeNames.newName(scope.blockName)
-            scope.fieldName = allocator.newName(scopeNames.newName("${scope.name}Field"))
+            scope.fieldName = context.fileName(scopeNames.newName("${scope.name}Field"))
         }
-
-        // Simple names that are already in scope in the generated file: the
-        // spec members, the generated declarations, and the locals of the
-        // generated function bodies. References that reuse one of them are
-        // imported under an alias.
-        val shadowedNames = buildSet {
-            addAll(specMemberNames)
-            add(names.builderName)
-            add(names.resultName)
-            add(names.functionName)
-            for (property in valueProperties) {
-                add(property.name)
-                add(property.fieldName)
+        for (property in listProperties) {
+            for (child in property.children) {
+                child.required.forEach { context.register(it.name) }
             }
-            for (property in listProperties) {
-                add(property.name)
-                add(property.fieldName)
-                for (child in property.children) {
-                    add(child.functionName)
-                    for (required in child.required) add(required.name)
-                }
-            }
-            for (scope in childScopes) {
-                add(scope.name)
-                add(scope.fieldName)
-                add(scope.blockName)
-                for (parameter in scope.parameters) add(parameter.name)
-            }
-            addAll(GENERATED_LOCAL_NAMES)
         }
-        val context = FileContext(
-            shadowedNames,
-            declarationsInPackage(resolver, packageName).mapTo(mutableSetOf()) { it.simpleName.asString() },
-        )
+        GENERATED_NAMES.forEach(context::register)
 
         val builderTypeName = names.builderType(packageName)
         val resultTypeName = names.resultType(packageName)
@@ -528,29 +506,29 @@ class DslProcessor(
                 }
                 .build()
             val setter = FunSpec.setterBuilder()
-                .addParameter("newValue", property.typeName)
+                .addParameter(VALUE_PARAMETER, property.typeName)
                 .apply {
                     if (property.mapper == null) {
                         if (property.validator != null) {
                             addStatement(
-                                "%L(%L.validate(newValue)) { %S }",
+                                "%L(%L.validate($VALUE_PARAMETER)) { %S }",
                                 context.member(REQUIRE),
                                 property.validator.code(context),
                                 property.message
                             )
                         }
-                        addStatement("%N = newValue", property.nameField())
+                        addStatement("%N = $VALUE_PARAMETER", property.nameField())
                     } else {
-                        addStatement("val stored = %L.toStored(newValue)", property.mapper.code(context))
+                        addStatement("val $STORED_VALUE = %L.toStored($VALUE_PARAMETER)", property.mapper.code(context))
                         if (property.validator != null) {
                             addStatement(
-                                "%L(%L.validate(stored)) { %S }",
+                                "%L(%L.validate($STORED_VALUE)) { %S }",
                                 context.member(REQUIRE),
                                 property.validator.code(context),
                                 property.message
                             )
                         }
-                        addStatement("%N = stored", property.nameField())
+                        addStatement("%N = $STORED_VALUE", property.nameField())
                     }
                 }
                 .build()
@@ -579,10 +557,10 @@ class DslProcessor(
 
         for (property in listProperties) {
             val setter = FunSpec.setterBuilder()
-                .addParameter("newValue", property.typeName)
-                .addStatement("val snapshot = newValue.%L()", context.member(TO_LIST))
+                .addParameter(VALUE_PARAMETER, property.typeName)
+                .addStatement("val $SNAPSHOT = $VALUE_PARAMETER.%L()", context.member(TO_LIST))
                 .addStatement("%N.clear()", property.nameField())
-                .addStatement("%N.addAll(snapshot)", property.nameField())
+                .addStatement("%N.addAll($SNAPSHOT)", property.nameField())
                 .build()
             builder.addProperty(
                 PropertySpec.builder(
@@ -602,8 +580,8 @@ class DslProcessor(
                     ParameterSpec.builder(property.blockName, property.blockTypeName).build()
             val arguments = requiredArguments(property.child.required)
             val scope = context.scope()
-            parameters.forEach { scope.newName(it.name) }
-            val childBuilderName = scope.newName("childBuilder")
+            parameters.forEach { scope.register(it.name) }
+            val childBuilderName = scope.newName(CHILD_BUILDER_LOCAL)
             builder.addFunction(
                 FunSpec.builder(property.name)
                     .addModifiers(KModifier.OVERRIDE)
@@ -615,7 +593,7 @@ class DslProcessor(
                         arguments,
                     )
                     .addStatement("%N.invoke(%N)", property.blockName, childBuilderName)
-                    .addStatement("%N = %N.build()", property.nameField(), childBuilderName)
+                    .addStatement("%N = %N.$BUILD_FUNCTION()", property.nameField(), childBuilderName)
                     .build()
             )
         }
@@ -634,9 +612,9 @@ class DslProcessor(
         }
         for (property in listProperties) {
             if (property.validator != null) {
-                buildCode.addStatement("for (element in %N) {", property.nameField())
+                buildCode.addStatement("for ($ELEMENT in %N) {", property.nameField())
                 buildCode.addStatement(
-                    "%L(%L.validate(element)) { %S }",
+                    "%L(%L.validate($ELEMENT)) { %S }",
                     context.member(REQUIRE),
                     property.validator.code(context),
                     property.message,
@@ -663,7 +641,7 @@ class DslProcessor(
             )
         }
         builder.addFunction(
-            FunSpec.builder("build")
+            FunSpec.builder(BUILD_FUNCTION)
                 .addModifiers(memberVisibility)
                 .returns(resultTypeName)
                 .addCode(buildCode.build())
@@ -727,9 +705,9 @@ class DslProcessor(
         for (property in listProperties) {
             for (child in property.children) {
                 val scope = context.scope()
-                child.required.forEach { scope.newName(it.name) }
-                val blockName = scope.newName("block")
-                val childBuilderName = scope.newName("childBuilder")
+                child.required.forEach { scope.register(it.name) }
+                val blockName = scope.newName(BLOCK_PARAMETER)
+                val childBuilderName = scope.newName(CHILD_BUILDER_LOCAL)
                 val arguments = requiredArguments(child.required)
                 val visibility = restrictiveVisibility(
                     listOf(parentVisibility, child.builderVisibility, child.resultVisibility)
@@ -760,7 +738,7 @@ class DslProcessor(
                         arguments,
                     )
                     .addStatement("%N.invoke(%N)", blockName, childBuilderName)
-                    .addStatement("this.%N.add(%N.build())", property.name, childBuilderName)
+                    .addStatement("this.%N.add(%N.$BUILD_FUNCTION())", property.name, childBuilderName)
                     .build()
                 if (child.required.isEmpty() && !child.requiresConfiguration) {
                     shorthands += PropertySpec.builder(child.functionName, UNIT)
@@ -793,9 +771,9 @@ class DslProcessor(
         context: FileContext,
     ): FunSpec {
         val scope = context.scope()
-        requiredProperties.forEach { scope.newName(it.name) }
-        val blockName = scope.newName("block")
-        val builderName = scope.newName("builder")
+        requiredProperties.forEach { scope.register(it.name) }
+        val blockName = scope.newName(BLOCK_PARAMETER)
+        val builderName = scope.newName(BUILDER_LOCAL)
         val arguments = requiredArguments(requiredProperties)
         return FunSpec.builder(names.functionName)
             .addModifiers(visibility, KModifier.INLINE)
@@ -815,7 +793,7 @@ class DslProcessor(
             .returns(resultTypeName)
             .addStatement("val %N = %T(%L)", builderName, builderTypeName, arguments)
             .addStatement("%N.invoke(%N)", blockName, builderName)
-            .addStatement("return %N.build()", builderName)
+            .addStatement("return %N.$BUILD_FUNCTION()", builderName)
             .build()
     }
 
@@ -839,14 +817,7 @@ class DslProcessor(
      * properties.
      */
     private fun requiredArguments(properties: List<RequiredProperty>): CodeBlock =
-        CodeBlock.builder()
-            .apply {
-                for ((index, property) in properties.withIndex()) {
-                    if (index > 0) add(", ")
-                    add("%N = %N", property.name, property.name)
-                }
-            }
-            .build()
+        properties.map { CodeBlock.of("%N = %N", it.name, it.name) }.joinToCode(", ")
 
     private fun ValueProperty.nameField(): String = fieldName
 
@@ -885,20 +856,21 @@ class DslProcessor(
         annotation: KSAnnotation?,
         checker: Checker,
     ): RequiredProperty? {
+        val diagnostics = checker.diagnosticCount
         val resolvedType = checker.expandAliases(type)
         val typeName = checker.renderTypeName(property, type, declarationType)
             ?: return null
-        if (annotation?.string("initial")?.isNotEmpty() == true) {
+        if (annotation?.providedString("initial") != null) {
             checker.report(property, "@DslValue.initial applies to var properties; $name is a val.")
             return null
         }
         val mapperType = annotation?.type("mapper")
-        if (mapperType != null && mapperType.declaration.qualifiedName?.asString() != "kotlin.Unit") {
+        if (mapperType != null && !mapperType.declaration.isClass(UNIT)) {
             checker.report(property, "@DslValue.mapper applies to var properties; $name is a val.")
             return null
         }
         val validator = checker.validator(property, name, annotation?.type("validator"), resolvedType)
-        if (!checker.valid) return null
+        if (checker.diagnosticCount != diagnostics) return null
         return RequiredProperty(name, typeName, resolvedType, validator, checker.message(annotation, name))
     }
 
@@ -916,8 +888,9 @@ class DslProcessor(
         annotation: KSAnnotation,
         checker: Checker,
     ): ValueProperty? {
+        val diagnostics = checker.diagnosticCount
         val resolvedType = checker.expandAliases(type)
-        if (resolvedType.declaration.qualifiedName?.asString() == "kotlin.collections.MutableList") {
+        if (resolvedType.declaration.isClass(MUTABLE_LIST)) {
             checker.report(
                 property,
                 "Property $name has a MutableList type; list properties are declared with @DslList."
@@ -926,8 +899,8 @@ class DslProcessor(
         }
         val typeName = checker.renderTypeName(property, type, declarationType) ?: return null
         val mapper = checker.mapper(property, name, annotation.type("mapper"), resolvedType)
-        if (!checker.valid) return null
-        val initial = annotation.string("initial").orEmpty().takeIf { it.isNotEmpty() }
+        if (checker.diagnosticCount != diagnostics) return null
+        val initial = annotation.providedString("initial")
         when (initial) {
             null if !resolvedType.isMarkedNullable -> {
                 checker.report(
@@ -956,7 +929,7 @@ class DslProcessor(
             annotation.type("validator"),
             mapper?.storedType ?: resolvedType,
         )
-        if (!checker.valid) return null
+        if (checker.diagnosticCount != diagnostics) return null
         return ValueProperty(
             name = name,
             typeName = typeName,
@@ -985,12 +958,13 @@ class DslProcessor(
         annotation: KSAnnotation,
         checker: Checker,
     ): ListProperty? {
+        val diagnostics = checker.diagnosticCount
         if (!property.isMutable) {
             checker.report(property, "@DslList applies to var properties; $name is a val.")
             return null
         }
         val resolvedType = checker.expandAliases(type)
-        if (resolvedType.declaration.qualifiedName?.asString() != "kotlin.collections.MutableList" ||
+        if (!resolvedType.declaration.isClass(MUTABLE_LIST) ||
             resolvedType.arguments.size != 1
         ) {
             checker.report(
@@ -1023,7 +997,7 @@ class DslProcessor(
         val listTypeName = checker.renderTypeName(property, type, declarationType) ?: return null
         val resolvedElementType = checker.expandAliases(elementType)
         val validator = checker.validator(property, name, annotation.type("validator"), resolvedElementType)
-        if (!checker.valid) return null
+        if (checker.diagnosticCount != diagnostics) return null
 
         val children = mutableListOf<ChildSpec>()
         for (argumentType in annotation.typeArray("children")) {
@@ -1037,7 +1011,7 @@ class DslProcessor(
             }
             val child = resolveChild(childDeclaration, checker) ?: return null
             val elementQualifiedName = resolvedElementType.makeNotNullable().declaration.qualifiedName?.asString()
-            val acceptsResult = elementQualifiedName == "kotlin.Any" ||
+            val acceptsResult = elementQualifiedName == ANY.canonicalName ||
                     elementQualifiedName == child.resultType.canonicalName ||
                     child.resultSupertype?.let(resolvedElementType::isAssignableFrom) == true
             if (!acceptsResult) {
@@ -1092,7 +1066,7 @@ class DslProcessor(
             checker.reportUnresolved(function, "The return type of @DslChild function $name is not resolvable yet.")
             return null
         }
-        if (functionReturnType?.declaration?.qualifiedName?.asString() != "kotlin.Unit") {
+        if (functionReturnType?.declaration?.isClass(UNIT) != true) {
             checker.report(function, "@DslChild function $name must return Unit.")
             return null
         }
@@ -1135,7 +1109,7 @@ class DslProcessor(
             checker.report(function, "The block parameter of @DslChild function $name must not be nullable.")
             return null
         }
-        val isReceiverStyle = blockShape.annotations.any { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }
+        val isReceiverStyle = blockShape.annotations.any { it.isMarker(EXTENSION_FUNCTION_TYPE) }
         val isSuspend = blockShape.isSuspendFunctionType
         val blockType = if (bareParameter) {
             checker.expandAliases(substitutedBlockType)
@@ -1180,7 +1154,7 @@ class DslProcessor(
                         )
                         if (
                             !parameterShape.isFunctionType ||
-                            parameterShape.annotations.none { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }
+                            parameterShape.annotations.none { it.isMarker(EXTENSION_FUNCTION_TYPE) }
                         ) {
                             return@any false
                         }
@@ -1219,7 +1193,7 @@ class DslProcessor(
         }
         val blockReturnType = arguments.last().type?.resolve()?.let { checker.expandAliases(it) }
         if (blockReturnType == null ||
-            blockReturnType.declaration.qualifiedName?.asString() != "kotlin.Unit" ||
+            !blockReturnType.declaration.isClass(UNIT) ||
             blockReturnType.isMarkedNullable
         ) {
             checker.report(
@@ -1317,8 +1291,9 @@ class DslProcessor(
         val names = Names.of(specName, annotation)
         val packageName = declaration.packageName.asString()
         val builderVisibility = effectiveVisibility(declaration, checker) ?: return null
+        val diagnostics = checker.diagnosticCount
         val resultSupertype = resolveResultSupertype(declaration, annotation, checker, checkSubclassing = false)
-        if (!checker.valid) return null
+        if (checker.diagnosticCount != diagnostics) return null
         val resultVisibility = restrictiveVisibility(listOfNotNull(builderVisibility, resultSupertype?.visibility))
         if (resultVisibility == KModifier.INTERNAL && declaration.containingFile == null) {
             checker.report(
@@ -1371,7 +1346,7 @@ class DslProcessor(
         val specName = spec.simpleName.asString()
         val rawType = annotation?.type("supertype") ?: return null
         val type = checker.expandAliases(rawType)
-        if (type.declaration.qualifiedName?.asString() == "kotlin.Unit") return null
+        if (type.declaration.isClass(UNIT)) return null
         if (type.isError) {
             checker.reportUnresolved(spec, "@DslBuilder.supertype of $specName is not resolvable yet.")
             return null
@@ -1542,7 +1517,7 @@ class DslProcessor(
     private fun acceptsChildResult(expectedType: KSType, child: ChildSpec, checker: Checker): Boolean {
         val resolvedExpected = checker.expandAliases(expectedType)
         val expectedName = resolvedExpected.makeNotNullable().declaration.qualifiedName?.asString()
-        return expectedName == "kotlin.Any" ||
+        return expectedName == ANY.canonicalName ||
                 expectedName == child.resultType.canonicalName ||
                 child.resultSupertype?.let { resolvedExpected.isAssignableFrom(it) } == true
     }
@@ -1568,7 +1543,7 @@ class DslProcessor(
         val blockShape = checker.aliasTarget(rawBlock)
         if (blockShape.isMarkedNullable) return false
         if (!blockShape.isFunctionType || blockShape.isSuspendFunctionType) return false
-        if (blockShape.annotations.none { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }) return false
+        if (blockShape.annotations.none { it.isMarker(EXTENSION_FUNCTION_TYPE) }) return false
         val blockArguments = checker.expandAliases(rawBlock).arguments
         if (blockArguments.size != 2) return false
         val blockReceiver = blockArguments[0].type?.resolve() ?: return false
@@ -1599,9 +1574,8 @@ class DslProcessor(
         var internal = false
         var declaration: KSDeclaration? = spec
         while (declaration != null) {
-            val modifiers = declaration.modifiers
-            when {
-                Modifier.PRIVATE in modifiers || Modifier.PROTECTED in modifiers -> {
+            when (declaration.getVisibility()) {
+                Visibility.PRIVATE, Visibility.PROTECTED, Visibility.LOCAL -> {
                     checker.report(
                         spec,
                         "The DslBuilder interface ${spec.simpleName.asString()} must be visible from the package level, but it is hidden by ${declaration.simpleName.asString()}."
@@ -1609,7 +1583,8 @@ class DslProcessor(
                     return null
                 }
 
-                Modifier.INTERNAL in modifiers -> internal = true
+                Visibility.INTERNAL -> internal = true
+                else -> {}
             }
             declaration = declaration.parentDeclaration
         }
@@ -1840,6 +1815,13 @@ class DslProcessor(
         private val pending = mutableListOf<Pair<KSNode, String>>()
         private var unresolvedCount = 0
 
+        /**
+         * The number of diagnostics collected so far. Callers capture it before
+         * a step and compare afterwards, so a failure of one property does not
+         * suppress the diagnostics of the next.
+         */
+        val diagnosticCount: Int get() = pending.size
+
         fun report(symbol: KSNode, message: String) {
             valid = false
             pending += symbol to message
@@ -1963,7 +1945,7 @@ class DslProcessor(
         /** Returns the immutable list type generated for a list result property. */
         fun immutableListType(elementType: KSType): KSType? {
             val declaration = resolver.getClassDeclarationByName(
-                resolver.getKSNameFromString("kotlin.collections.List")
+                resolver.getKSNameFromString(LIST.canonicalName)
             ) ?: return null
             val argument = resolver.getTypeArgument(
                 resolver.createKSTypeReferenceFromKSType(expandAliases(elementType)),
@@ -2125,7 +2107,7 @@ class DslProcessor(
         private fun hasRenderableAnnotations(type: KSType): Boolean =
             type.annotations.any { annotation ->
                 val qualifiedName = annotation.annotationType.resolve().declaration.qualifiedName?.asString()
-                qualifiedName !in IGNORED_ANNOTATIONS && qualifiedName?.startsWith("kotlin.internal.") != true
+                qualifiedName !in IGNORED_ANNOTATIONS && qualifiedName?.startsWith(KOTLIN_INTERNAL_PREFIX) != true
             }
 
         /**
@@ -2192,7 +2174,7 @@ class DslProcessor(
             for (annotation in type.annotations) {
                 val declaration = annotation.annotationType.resolve().declaration
                 val qualifiedName = declaration.qualifiedName?.asString()
-                if (qualifiedName in IGNORED_ANNOTATIONS || qualifiedName?.startsWith("kotlin.internal.") == true) {
+                if (qualifiedName in IGNORED_ANNOTATIONS || qualifiedName?.startsWith(KOTLIN_INTERNAL_PREFIX) == true) {
                     continue
                 }
                 if (!isVisible(declaration)) return false
@@ -2227,7 +2209,10 @@ class DslProcessor(
         private fun isVisible(declaration: KSDeclaration): Boolean {
             var current: KSDeclaration? = declaration
             while (current != null) {
-                if (Modifier.PRIVATE in current.modifiers || Modifier.PROTECTED in current.modifiers) return false
+                when (current.getVisibility()) {
+                    Visibility.PRIVATE, Visibility.PROTECTED, Visibility.LOCAL -> return false
+                    else -> {}
+                }
                 current = current.parentDeclaration
             }
             return true
@@ -2244,7 +2229,7 @@ class DslProcessor(
         private fun lambdaTypeName(symbol: KSNode, type: KSType, shape: KSType, annotationsFrom: KSType?): TypeName {
             val arguments = type.arguments
             val carried = carriedArguments(annotationsFrom, type).ifEmpty { carriedArguments(shape, type) }
-            val isExtension = shape.annotations.any { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }
+            val isExtension = shape.annotations.any { it.isMarker(EXTENSION_FUNCTION_TYPE) }
             val receiver = if (isExtension) {
                 arguments.firstOrNull()?.type?.resolve()?.let { renderTypeName(symbol, it, carried.getOrNull(0)) }
             } else {
@@ -2257,7 +2242,7 @@ class DslProcessor(
                 val typeName = argumentType?.let { renderTypeName(symbol, it, carried.getOrNull(valueStart + index)) }
                     ?: ANY.copy(nullable = true)
                 val name = argumentType?.annotations
-                    ?.firstOrNull { it.shortName.asString() == PARAMETER_NAME }
+                    ?.firstOrNull { it.isMarker(PARAMETER_NAME) }
                     ?.arguments
                     ?.firstOrNull()
                     ?.value as? String
@@ -2287,12 +2272,11 @@ class DslProcessor(
             for (type in types) {
                 val localCounts = mutableMapOf<String, Int>()
                 for (annotation in type.annotations) {
-                    val shortName = annotation.shortName.asString()
-                    if (ignoreExtensionMarker && shortName == EXTENSION_FUNCTION_TYPE) continue
+                    if (ignoreExtensionMarker && annotation.isMarker(EXTENSION_FUNCTION_TYPE)) continue
                     val qualifiedName = annotation.annotationType.resolve().declaration.qualifiedName?.asString()
                     if (qualifiedName == null ||
                         qualifiedName in IGNORED_ANNOTATIONS ||
-                        qualifiedName.startsWith("kotlin.internal.")
+                        qualifiedName.startsWith(KOTLIN_INTERNAL_PREFIX)
                     ) {
                         continue
                     }
@@ -2478,12 +2462,13 @@ class DslProcessor(
             }
             var containingDeclaration: KSDeclaration? = declaration
             while (containingDeclaration != null) {
-                if (
-                    Modifier.PRIVATE in containingDeclaration.modifiers ||
-                    Modifier.PROTECTED in containingDeclaration.modifiers
-                ) {
-                    report(property, "The $role of property $propertyName is not visible from generated code.")
-                    return null
+                when (containingDeclaration.getVisibility()) {
+                    Visibility.PRIVATE, Visibility.PROTECTED, Visibility.LOCAL -> {
+                        report(property, "The $role of property $propertyName is not visible from generated code.")
+                        return null
+                    }
+
+                    else -> {}
                 }
                 containingDeclaration = containingDeclaration.parentDeclaration
             }
@@ -2501,10 +2486,11 @@ class DslProcessor(
                         return null
                     }
                     val constructor = declaration.primaryConstructor
+                    val constructorVisibility = constructor?.getVisibility()
                     val callable = constructor != null &&
                             constructor.parameters.all { it.hasDefault || it.isVararg } &&
-                            Modifier.PRIVATE !in constructor.modifiers &&
-                            Modifier.PROTECTED !in constructor.modifiers
+                            constructorVisibility != Visibility.PRIVATE &&
+                            constructorVisibility != Visibility.PROTECTED
                     if (callable) Instantiation(declaration.toClassName(), construct = true) else {
                         report(
                             property,
@@ -2536,53 +2522,56 @@ class DslProcessor(
             fun number(text: String): CodeBlock = CodeBlock.of("%L", text)
 
             val literalType = expandAliases(type).makeNotNullable()
-            return when (literalType.declaration.qualifiedName?.asString()) {
-                "kotlin.Int" -> initial.toLongOrNull()?.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }
+            val literalClass = literalType.declaration
+            return when {
+                literalClass.isClass(INT) -> initial.toLongOrNull()?.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }
                     ?.let { number(it.toString()) }
                     ?: fail("not an Int constant")
 
-                "kotlin.Long" -> initial.toLongOrNull()?.let {
+                literalClass.isClass(LONG) -> initial.toLongOrNull()?.let {
                     number(if (it == Long.MIN_VALUE) "Long.MIN_VALUE" else "${it}L")
                 } ?: fail("not a Long constant")
 
-                "kotlin.Short" -> initial.toLongOrNull()?.takeIf { it in Short.MIN_VALUE..Short.MAX_VALUE }
+                literalClass.isClass(SHORT) -> initial.toLongOrNull()?.takeIf { it in Short.MIN_VALUE..Short.MAX_VALUE }
                     ?.let { number(if (it < 0) "($it).toShort()" else "$it.toShort()") }
                     ?: fail("not a Short constant")
 
-                "kotlin.Byte" -> initial.toLongOrNull()?.takeIf { it in Byte.MIN_VALUE..Byte.MAX_VALUE }
+                literalClass.isClass(BYTE) -> initial.toLongOrNull()?.takeIf { it in Byte.MIN_VALUE..Byte.MAX_VALUE }
                     ?.let { number(if (it < 0) "($it).toByte()" else "$it.toByte()") }
                     ?: fail("not a Byte constant")
 
-                "kotlin.Double" -> initial.toDoubleOrNull()?.takeIf(Double::isFinite)
+                literalClass.isClass(DOUBLE) -> initial.toDoubleOrNull()?.takeIf(Double::isFinite)
                     ?.let { number(formatFloatingPoint(it)) }
                     ?: fail("not a finite Double constant")
 
-                "kotlin.Float" -> initial.toFloatOrNull()?.takeIf(Float::isFinite)
+                literalClass.isClass(FLOAT) -> initial.toFloatOrNull()?.takeIf(Float::isFinite)
                     ?.let { number("${formatFloatingPoint(it.toDouble())}f") }
                     ?: fail("not a finite Float constant")
 
-                "kotlin.Boolean" -> when (initial) {
+                literalClass.isClass(BOOLEAN) -> when (initial) {
                     "true", "false" -> number(initial)
                     else -> fail("not a Boolean constant")
                 }
 
-                "kotlin.Char" -> if (initial.length == 1) {
+                literalClass.isClass(CHAR) -> if (initial.length == 1) {
                     CodeBlock.of("'%L'", escapeCharLiteral(initial[0]))
                 } else {
                     fail("not a single character")
                 }
 
-                "kotlin.String" -> CodeBlock.of("%S", initial)
-                "kotlin.UInt" -> initial.toLongOrNull()?.takeIf { it in 0..UInt.MAX_VALUE.toLong() }
+                literalClass.isClass(STRING) -> CodeBlock.of("%S", initial)
+                literalClass.isClass(UINT) -> initial.toLongOrNull()?.takeIf { it in 0..UInt.MAX_VALUE.toLong() }
                     ?.let { number("${it}u") }
                     ?: fail("not a UInt constant")
 
-                "kotlin.ULong" -> initial.toULongOrNull()?.let { number("${it}uL") } ?: fail("not a ULong constant")
-                "kotlin.UShort" -> initial.toLongOrNull()?.takeIf { it in 0..UShort.MAX_VALUE.toLong() }
+                literalClass.isClass(ULONG) -> initial.toULongOrNull()?.let { number("${it}uL") }
+                    ?: fail("not a ULong constant")
+
+                literalClass.isClass(USHORT) -> initial.toLongOrNull()?.takeIf { it in 0..UShort.MAX_VALUE.toLong() }
                     ?.let { number("$it.toUShort()") }
                     ?: fail("not a UShort constant")
 
-                "kotlin.UByte" -> initial.toLongOrNull()?.takeIf { it in 0..UByte.MAX_VALUE.toLong() }
+                literalClass.isClass(UBYTE) -> initial.toLongOrNull()?.takeIf { it in 0..UByte.MAX_VALUE.toLong() }
                     ?.let { number("$it.toUByte()") }
                     ?: fail("not a UByte constant")
 
@@ -2602,7 +2591,7 @@ class DslProcessor(
         }
 
         private fun KSType.isUnit(): Boolean =
-            declaration.qualifiedName?.asString() == "kotlin.Unit"
+            declaration.isClass(UNIT)
 
         /**
          * Searches the supertype hierarchy of [declaration] for [qualifiedName]
@@ -2667,24 +2656,38 @@ class DslProcessor(
     }
 
     /**
-     * The naming state of one generated file: the simple names that are
-     * already in scope and the aliased imports that references need because of
-     * them.
+     * The naming state of one generated file: every simple name that the file
+     * declares and the aliased imports that references need because of them.
+     * Names are registered where they are created, so the registry stays in
+     * sync with the generated declarations.
      */
     private class FileContext(
-        private val shadowedNames: Set<String>,
         private val packageNames: Set<String>,
     ) {
+        private val names = mutableSetOf<String>()
+        private val fileAllocator = NameAllocator()
         private val aliases = mutableListOf<AliasRequest>()
         private val aliasNames = mutableMapOf<String, String>()
         private val aliasAllocator = NameAllocator().apply {
-            (shadowedNames + packageNames).forEach { newName(it) }
+            packageNames.forEach { newName(it) }
         }
 
-        fun isShadowed(name: String): Boolean = name in shadowedNames
+        /** Registers a name that the generated file already declares. */
+        fun register(name: String) {
+            if (names.add(name)) {
+                fileAllocator.newName(name)
+                aliasAllocator.newName(name)
+            }
+        }
 
-        /** Returns an allocator for the locals of one generated function body. */
-        fun scope(): NameAllocator = NameAllocator()
+        /** Allocates a file-level name, such as a backing field. */
+        fun fileName(preferred: String): String =
+            fileAllocator.newName(preferred).also { registerAllocated(it) }
+
+        fun isShadowed(name: String): Boolean = name in names
+
+        /** Returns the scope of the locals of one generated function body. */
+        fun scope(): LocalScope = LocalScope()
 
         /**
          * Renders a reference to a top-level function or property. The explicit
@@ -2715,6 +2718,24 @@ class DslProcessor(
 
         fun applyTo(builder: FileSpec.Builder) {
             aliases.forEach { it.applyTo(builder) }
+        }
+
+        /** Allocates and registers the locals of one generated function body. */
+        inner class LocalScope {
+            private val allocator = NameAllocator()
+
+            /** Reserves a name that the generated function body declares. */
+            fun register(name: String) {
+                allocator.newName(name)
+                registerAllocated(name)
+            }
+
+            fun newName(suggestion: String): String =
+                allocator.newName(suggestion).also { registerAllocated(it) }
+        }
+
+        private fun registerAllocated(name: String) {
+            if (names.add(name)) aliasAllocator.newName(name)
         }
 
         private fun aliasOfType(type: ClassName): String =
@@ -2890,36 +2911,47 @@ class DslProcessor(
         const val DSL_VALIDATOR_NAME = "top.ltfan.dslutilities.DslValidator"
         const val DSL_MAPPER_NAME = "top.ltfan.dslutilities.DslMapper"
 
+        /** Prefix of the compiler-internal annotations that are never copied. */
+        const val KOTLIN_INTERNAL_PREFIX = "kotlin.internal."
+
+        /** Compiler marker annotations that KotlinPoet expresses through syntax. */
+        val EXTENSION_FUNCTION_TYPE = ClassName("kotlin", "ExtensionFunctionType")
+        val PARAMETER_NAME = ClassName("kotlin", "ParameterName")
+        val UNSAFE_VARIANCE = ClassName("kotlin", "UnsafeVariance")
+
         /**
          * Type annotations that are compiler markers rather than user-visible
          * annotations; KotlinPoet expresses their meaning through the type syntax
          * instead of copying them.
          */
         val IGNORED_ANNOTATIONS = setOf(
-            "kotlin.ExtensionFunctionType",
-            "kotlin.ParameterName",
-            "kotlin.UnsafeVariance",
-        )
+            EXTENSION_FUNCTION_TYPE,
+            PARAMETER_NAME,
+            UNSAFE_VARIANCE,
+        ).mapTo(mutableSetOf()) { it.canonicalName }
+
+        /** Unsigned integral types, which KotlinPoet defines no constants for. */
+        val UINT = ClassName("kotlin", "UInt")
+        val ULONG = ClassName("kotlin", "ULong")
+        val USHORT = ClassName("kotlin", "UShort")
+        val UBYTE = ClassName("kotlin", "UByte")
 
         /**
-         * Local and member names that generated function bodies declare; a
-         * reference that reuses one of them receives an aliased import.
+         * Names declared by generated function bodies and the generated builder;
+         * the templates below use the same constants, so a reference that reuses
+         * one of them receives an aliased import.
          */
-        val GENERATED_LOCAL_NAMES = setOf(
-            "newValue",
-            "stored",
-            "snapshot",
-            "element",
-            "childBuilder",
-            "block",
-            "builder",
-            "build",
-        )
+        const val VALUE_PARAMETER = "newValue"
+        const val STORED_VALUE = "stored"
+        const val SNAPSHOT = "snapshot"
+        const val ELEMENT = "element"
+        const val BUILD_FUNCTION = "build"
+        const val BLOCK_PARAMETER = "block"
+        const val BUILDER_LOCAL = "builder"
+        const val CHILD_BUILDER_LOCAL = "childBuilder"
 
-        const val EXTENSION_FUNCTION_TYPE = "ExtensionFunctionType"
-        const val PARAMETER_NAME = "ParameterName"
-
-        val ANY: ClassName = Any::class.asClassName()
+        /** The fixed names that generated bodies declare, registered per file. */
+        val GENERATED_NAMES = setOf(VALUE_PARAMETER, STORED_VALUE, SNAPSHOT, ELEMENT, BUILD_FUNCTION)
 
         val REQUIRE = MemberName("kotlin", "require")
         val REQUIRE_NOT_NULL = MemberName("kotlin", "requireNotNull")
@@ -2932,6 +2964,28 @@ private fun KSAnnotated.annotation(qualifiedName: String): KSAnnotation? =
     annotations.firstOrNull {
         it.annotationType.resolve().declaration.qualifiedName?.asString() == qualifiedName
     }
+
+/**
+ * Returns the string argument [name] when the annotation provides it
+ * explicitly; an argument that fell back to its default reads as absent.
+ */
+private fun KSAnnotation.providedString(name: String): String? {
+    val argument = arguments.firstOrNull { it.name?.asString() == name } ?: return null
+    return if (argument.origin == Origin.SYNTHETIC) null else argument.value as? String
+}
+
+/** Returns whether this declaration has the qualified name of [className]. */
+private fun KSDeclaration.isClass(className: ClassName): Boolean =
+    qualifiedName?.asString() == className.canonicalName
+
+/**
+ * Returns whether this annotation is the compiler marker [className]. A
+ * marker like `kotlin.ExtensionFunctionType` is synthetic: KSP exposes it
+ * with a short name but without a resolvable declaration, so the short
+ * name derived from the constant is the only available signal.
+ */
+private fun KSAnnotation.isMarker(className: ClassName): Boolean =
+    shortName.asString() == className.simpleName
 
 private fun KSAnnotation.string(name: String): String? =
     arguments.firstOrNull { it.name?.asString() == name }?.value as? String
