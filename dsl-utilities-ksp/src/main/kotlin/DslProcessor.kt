@@ -140,6 +140,7 @@ class DslProcessor(
         }
 
         val abstractFunctions = hierarchy.abstractFunctions(spec)
+        val specMemberNames = specProperties.mapTo(mutableSetOf()) { it.declaration.simpleName.asString() }
         for ((name, overloads) in abstractFunctions.groupBy { it.declaration.simpleName.asString() }) {
             if (overloads.size > 1) {
                 checker.report(
@@ -150,6 +151,7 @@ class DslProcessor(
         }
         for (member in hierarchy.allFunctions(spec)) {
             val function = member.declaration
+            specMemberNames += function.simpleName.asString()
             if (function.isAbstract) continue
             if (function.annotation(DSL_CHILD_ANNOTATION) != null) {
                 checker.report(
@@ -331,6 +333,7 @@ class DslProcessor(
             valueProperties,
             listProperties,
             childScopes,
+            specMemberNames,
         )
         val resultType =
             resultType(resultTypeName, resultVisibility, resultProperties, supertypeTypeName, supertypeOverrides)
@@ -395,7 +398,18 @@ class DslProcessor(
         valueProperties: List<ValueProperty>,
         listProperties: List<ListProperty>,
         childScopes: List<ChildScope>,
+        specMemberNames: Set<String>,
     ): TypeSpec {
+        // A member of the spec can capture an unqualified standard library
+        // call in the generated code, so a name the spec declares is
+        // qualified.
+        fun stdlibCall(name: String, packageName: String): String =
+            if (name in specMemberNames) "$packageName.$name" else name
+
+        val requireCall = stdlibCall("require", "kotlin")
+        val requireNotNullCall = stdlibCall("requireNotNull", "kotlin")
+        val mutableListOfCall = stdlibCall("mutableListOf", "kotlin.collections")
+        val shadowedToList = "toList" in specMemberNames
         val builder = TypeSpec.classBuilder(builderTypeName)
             .addModifiers(visibility)
             .primaryConstructor(
@@ -434,7 +448,7 @@ class DslProcessor(
                     MUTABLE_LIST.parameterizedBy(property.elementTypeName),
                     KModifier.PRIVATE,
                 )
-                    .initializer("mutableListOf()")
+                    .initializer("$mutableListOfCall()")
                     .build()
             )
         }
@@ -467,7 +481,7 @@ class DslProcessor(
                     if (property.mapper == null) {
                         if (property.validator != null) {
                             addStatement(
-                                "require(%L.validate(newValue)) { %S }",
+                                "$requireCall(%L.validate(newValue)) { %S }",
                                 invocation(property.validator),
                                 property.message
                             )
@@ -477,7 +491,7 @@ class DslProcessor(
                         addStatement("val stored = %L.toStored(newValue)", invocation(property.mapper))
                         if (property.validator != null) {
                             addStatement(
-                                "require(%L.validate(stored)) { %S }",
+                                "$requireCall(%L.validate(stored)) { %S }",
                                 invocation(property.validator),
                                 property.message
                             )
@@ -499,7 +513,7 @@ class DslProcessor(
             if (property.validator != null) {
                 builder.addInitializerBlock(
                     CodeBlock.of(
-                        "require(%L.validate(%N)) { %S }\n",
+                        "$requireCall(%L.validate(%N)) { %S }\n",
                         invocation(property.validator),
                         property.nameField(),
                         property.message,
@@ -511,7 +525,13 @@ class DslProcessor(
         for (property in listProperties) {
             val setter = FunSpec.setterBuilder()
                 .addParameter("newValue", property.typeName)
-                .addStatement("val snapshot = newValue.toList()")
+                .addStatement(
+                    if (shadowedToList) {
+                        "val snapshot = kotlin.collections.ArrayList(newValue)"
+                    } else {
+                        "val snapshot = newValue.toList()"
+                    }
+                )
                 .addStatement("%N.clear()", property.nameField())
                 .addStatement("%N.addAll(snapshot)", property.nameField())
                 .build()
@@ -532,17 +552,19 @@ class DslProcessor(
             val parameters = property.parameters.map { ParameterSpec.builder(it.name, it.typeName).build() } +
                     ParameterSpec.builder(property.blockName, property.blockTypeName).build()
             val arguments = requiredArguments(property.child.required)
+            val childBuilderName = availableName("childBuilder", parameters.map { it.name })
             builder.addFunction(
                 FunSpec.builder(property.name)
                     .addModifiers(KModifier.OVERRIDE)
                     .addParameters(parameters)
                     .addStatement(
-                        "%N = %T(%L).apply(%N).build()",
-                        property.nameField(),
+                        "val %N = %T(%L)",
+                        childBuilderName,
                         classNameOf(property.child.builderQualifiedName),
                         arguments,
-                        property.blockName,
                     )
+                    .addStatement("%N.invoke(%N)", property.blockName, childBuilderName)
+                    .addStatement("%N = %N.build()", property.nameField(), childBuilderName)
                     .build()
             )
         }
@@ -551,7 +573,7 @@ class DslProcessor(
         for (property in requiredProperties) {
             if (property.validator != null) {
                 buildCode.addStatement(
-                    "require(%L.validate(%N)) { %S }",
+                    "$requireCall(%L.validate(%N)) { %S }",
                     invocation(property.validator),
                     property.name,
                     property.message,
@@ -562,7 +584,7 @@ class DslProcessor(
             if (property.validator != null) {
                 buildCode.addStatement("for (element in %N) {", property.nameField())
                 buildCode.addStatement(
-                    "require(%L.validate(element)) { %S }",
+                    "$requireCall(%L.validate(element)) { %S }",
                     invocation(property.validator),
                     property.message,
                 )
@@ -579,11 +601,17 @@ class DslProcessor(
         }
         for (property in requiredProperties) addArgument(property.name, "%N", property.name)
         for (property in valueProperties) addArgument(property.name, "%N", property.name)
-        for (property in listProperties) addArgument(property.name, "%N.toList()", property.nameField())
+        for (property in listProperties) {
+            addArgument(
+                property.name,
+                if (shadowedToList) "kotlin.collections.ArrayList(%N)" else "%N.toList()",
+                property.nameField(),
+            )
+        }
         for (property in childScopes) {
             addArgument(
                 property.name,
-                "requireNotNull(%N) { %S }",
+                "$requireNotNullCall(%N) { %S }",
                 property.nameField(),
                 "Property ${property.name} is required.",
             )
@@ -653,6 +681,7 @@ class DslProcessor(
             for (child in property.children) {
                 val blockName = availableName("block", child.required.map { it.name })
                 val arguments = requiredArguments(child.required)
+                val childBuilderName = availableName("childBuilder", child.required.map { it.name } + blockName)
                 // A parameter or the block name equal to the list property name
                 // would shadow the property inside the generated function.
                 val shadowed = property.name == blockName || child.required.any { it.name == property.name }
@@ -679,15 +708,20 @@ class DslProcessor(
                             .build()
                     )
                     .addStatement(
-                        if (shadowed) {
-                            "this.%N.add(%T(%L).apply(%N).build())"
-                        } else {
-                            "%N.add(%T(%L).apply(%N).build())"
-                        },
-                        property.name,
+                        "val %N = %T(%L)",
+                        childBuilderName,
                         classNameOf(child.builderQualifiedName),
                         arguments,
-                        blockName,
+                    )
+                    .addStatement("%N.invoke(%N)", blockName, childBuilderName)
+                    .addStatement(
+                        if (shadowed) {
+                            "this.%N.add(%N.build())"
+                        } else {
+                            "%N.add(%N.build())"
+                        },
+                        property.name,
+                        childBuilderName,
                     )
                     .build()
                 if (child.required.isEmpty() && !child.requiresConfiguration) {
@@ -788,15 +822,18 @@ class DslProcessor(
     /** The receiver expression that invokes an object or a no-argument class. */
     private fun invocation(prefix: String): CodeBlock {
         val className = prefix.removeSuffix("()")
-        val simpleName = className.substringAfterLast('.')
-        if (simpleName.firstOrNull()?.isLowerCase() == true) {
-            // A lowercase name can be captured by a generated local or member,
-            // so it is referenced by its qualified name.
-            return if (prefix.endsWith("()")) {
-                CodeBlock.of("%L()", className)
+        val simpleName = className.substringAfterLast('.').removeSurrounding("`")
+        if (simpleName.firstOrNull()?.isUpperCase() != true) {
+            // A name that does not start with an uppercase letter can be
+            // captured by a generated local or member, so it is referenced by
+            // its qualified name with the last segment escaped as a name.
+            val packageName = className.substringBeforeLast('.', "")
+            val name = if (packageName.isEmpty()) {
+                CodeBlock.of("%N", simpleName)
             } else {
-                CodeBlock.of("%L", className)
+                CodeBlock.of("%L.%N", packageName, simpleName)
             }
+            return if (prefix.endsWith("()")) CodeBlock.of("%L()", name) else name
         }
         val type = classNameOf(className)
         return if (prefix.endsWith("()")) CodeBlock.of("%T()", type) else CodeBlock.of("%T", type)
@@ -813,7 +850,16 @@ class DslProcessor(
      * are expressed through their nesting so generated code references them
      * without package-level ambiguity.
      */
-    private fun classNameOf(qualifiedName: String): ClassName = ClassName.bestGuess(qualifiedName)
+    private fun classNameOf(qualifiedName: String): ClassName {
+        val simpleName = qualifiedName.substringAfterLast('.').removeSurrounding("`")
+        return if (simpleName.firstOrNull()?.isUpperCase() == true) {
+            ClassName.bestGuess(qualifiedName)
+        } else {
+            // bestGuess rejects simple names that do not start with an
+            // uppercase letter, so the name is split explicitly instead.
+            ClassName(qualifiedName.substringBeforeLast('.', ""), simpleName)
+        }
+    }
 
     /**
      * Copies [TypeName] through its base declaration, keeping defaults for the
@@ -1267,15 +1313,6 @@ class DslProcessor(
             return null
         }
         val hierarchy = Hierarchy(checker, reportedStarProjections)
-        // Generated code applies the DSL block to the child builder with
-        // apply, so a member of that name would capture the call.
-        val applyMember = hierarchy.allProperties(declaration).map { it.declaration }
-            .plus(hierarchy.allFunctions(declaration).map { it.declaration })
-            .firstOrNull { it.simpleName.asString() == "apply" }
-        if (applyMember != null) {
-            checker.report(applyMember, "Child DslBuilder interface $specName must not declare a member named apply.")
-            return null
-        }
         val required = mutableListOf<RequiredProperty>()
         for (member in hierarchy.allProperties(declaration).filter { hierarchy.isAbstract(it.declaration) }) {
             val property = member.declaration
