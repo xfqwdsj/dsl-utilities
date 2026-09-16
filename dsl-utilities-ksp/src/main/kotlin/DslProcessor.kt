@@ -315,6 +315,34 @@ class DslProcessor(
             reservedBackingNames += scope.fieldName
         }
 
+        // Simple names that are already in scope in the generated file: the
+        // spec members, the generated declarations, and the locals of the
+        // generated function bodies. References that reuse one of them are
+        // imported under an alias.
+        val shadowedNames = buildSet {
+            addAll(specMemberNames)
+            add(names.builderName)
+            add(names.resultName)
+            add(names.functionName)
+            for (property in valueProperties) {
+                add(property.name)
+                add(property.fieldName)
+            }
+            for (property in listProperties) {
+                add(property.name)
+                add(property.fieldName)
+                for (child in property.children) add(child.functionName)
+            }
+            for (scope in childScopes) {
+                add(scope.name)
+                add(scope.fieldName)
+                add(scope.blockName)
+                for (parameter in scope.parameters) add(parameter.name)
+            }
+            addAll(GENERATED_LOCAL_NAMES)
+        }
+        val context = FileContext(shadowedNames)
+
         val builderTypeName = names.builderType(packageName)
         val resultTypeName = names.resultType(packageName)
         reserveGeneratedNames(
@@ -338,7 +366,7 @@ class DslProcessor(
             valueProperties,
             listProperties,
             childScopes,
-            specMemberNames,
+            context,
         )
         val resultType =
             resultType(resultTypeName, resultVisibility, resultProperties, supertypeTypeName, supertypeOverrides)
@@ -362,7 +390,10 @@ class DslProcessor(
             .addFunctions(elementFunctions.functions)
             .addProperties(elementFunctions.shorthands)
             .addType(resultType)
-            .apply { buildFunction?.let(::addFunction) }
+            .apply {
+                buildFunction?.let(::addFunction)
+                context.applyTo(this)
+            }
             .build()
 
         val file = codeGenerator.createNewFile(
@@ -403,18 +434,18 @@ class DslProcessor(
         valueProperties: List<ValueProperty>,
         listProperties: List<ListProperty>,
         childScopes: List<ChildScope>,
-        specMemberNames: Set<String>,
+        context: FileContext,
     ): TypeSpec {
         // A member of the spec can capture an unqualified standard library
         // call in the generated code, so a name the spec declares is
         // qualified.
         fun stdlibCall(name: String, packageName: String): String =
-            if (name in specMemberNames) "$packageName.$name" else name
+            if (context.isShadowed(name)) "$packageName.$name" else name
 
         val requireCall = stdlibCall("require", "kotlin")
         val requireNotNullCall = stdlibCall("requireNotNull", "kotlin")
         val mutableListOfCall = stdlibCall("mutableListOf", "kotlin.collections")
-        val shadowedToList = "toList" in specMemberNames
+        val shadowedToList = context.isShadowed("toList")
         val builder = TypeSpec.classBuilder(builderTypeName)
             .addModifiers(visibility)
             .primaryConstructor(
@@ -439,10 +470,15 @@ class DslProcessor(
             )
         }
         for (property in valueProperties) {
+            val initializer = if (property.mapper != null) {
+                CodeBlock.of("%L.toStored(%L)", property.mapper.code(context), property.initialLiteral)
+            } else {
+                CodeBlock.of("%L", property.initialLiteral)
+            }
             builder.addProperty(
                 PropertySpec.builder(property.nameField(), property.storageTypeName, KModifier.PRIVATE)
                     .mutable(true)
-                    .initializer("%L", property.initialExpression)
+                    .initializer(initializer)
                     .build()
             )
         }
@@ -476,7 +512,7 @@ class DslProcessor(
                     if (property.mapper == null) {
                         addStatement("return %N", property.nameField())
                     } else {
-                        addStatement("return %L.toValue(%N)", invocation(property.mapper), property.nameField())
+                        addStatement("return %L.toValue(%N)", property.mapper.code(context), property.nameField())
                     }
                 }
                 .build()
@@ -487,17 +523,17 @@ class DslProcessor(
                         if (property.validator != null) {
                             addStatement(
                                 "$requireCall(%L.validate(newValue)) { %S }",
-                                invocation(property.validator),
+                                property.validator.code(context),
                                 property.message
                             )
                         }
                         addStatement("%N = newValue", property.nameField())
                     } else {
-                        addStatement("val stored = %L.toStored(newValue)", invocation(property.mapper))
+                        addStatement("val stored = %L.toStored(newValue)", property.mapper.code(context))
                         if (property.validator != null) {
                             addStatement(
                                 "$requireCall(%L.validate(stored)) { %S }",
-                                invocation(property.validator),
+                                property.validator.code(context),
                                 property.message
                             )
                         }
@@ -519,7 +555,7 @@ class DslProcessor(
                 builder.addInitializerBlock(
                     CodeBlock.of(
                         "$requireCall(%L.validate(%N)) { %S }\n",
-                        invocation(property.validator),
+                        property.validator.code(context),
                         property.nameField(),
                         property.message,
                     )
@@ -579,7 +615,7 @@ class DslProcessor(
             if (property.validator != null) {
                 buildCode.addStatement(
                     "$requireCall(%L.validate(%N)) { %S }",
-                    invocation(property.validator),
+                    property.validator.code(context),
                     property.name,
                     property.message,
                 )
@@ -590,7 +626,7 @@ class DslProcessor(
                 buildCode.addStatement("for (element in %N) {", property.nameField())
                 buildCode.addStatement(
                     "$requireCall(%L.validate(element)) { %S }",
-                    invocation(property.validator),
+                    property.validator.code(context),
                     property.message,
                 )
                 buildCode.addStatement("}")
@@ -824,26 +860,6 @@ class DslProcessor(
         return "$preferred$suffix"
     }
 
-    /** The receiver expression that invokes an object or a no-argument class. */
-    private fun invocation(prefix: String): CodeBlock {
-        val className = prefix.removeSuffix("()")
-        val simpleName = className.substringAfterLast('.').removeSurrounding("`")
-        if (simpleName.firstOrNull()?.isUpperCase() != true) {
-            // A name that does not start with an uppercase letter can be
-            // captured by a generated local or member, so it is referenced by
-            // its qualified name with the last segment escaped as a name.
-            val packageName = className.substringBeforeLast('.', "")
-            val name = if (packageName.isEmpty()) {
-                CodeBlock.of("%N", simpleName)
-            } else {
-                CodeBlock.of("%L.%N", packageName, simpleName)
-            }
-            return if (prefix.endsWith("()")) CodeBlock.of("%L()", name) else name
-        }
-        val type = classNameOf(className)
-        return if (prefix.endsWith("()")) CodeBlock.of("%T()", type) else CodeBlock.of("%T", type)
-    }
-
     private fun ValueProperty.nameField(): String = fieldName
 
     private fun ListProperty.nameField(): String = fieldName
@@ -861,22 +877,6 @@ class DslProcessor(
             .any { current ->
                 current.getDeclaredProperties().any { it.isAbstract() && it.simpleName.asString() == name }
             }
-
-    /**
-     * Resolves a fully qualified name into a [ClassName]; nested classes
-     * are expressed through their nesting so generated code references them
-     * without package-level ambiguity.
-     */
-    private fun classNameOf(qualifiedName: String): ClassName {
-        val simpleName = qualifiedName.substringAfterLast('.').removeSurrounding("`")
-        return if (simpleName.firstOrNull()?.isUpperCase() == true) {
-            ClassName.bestGuess(qualifiedName)
-        } else {
-            // bestGuess rejects simple names that do not start with an
-            // uppercase letter, so the name is split explicitly instead.
-            ClassName(qualifiedName.substringBeforeLast('.', ""), simpleName)
-        }
-    }
 
     /**
      * Copies [TypeName] through its base declaration, keeping defaults for the
@@ -957,11 +957,10 @@ class DslProcessor(
                 return null
             }
         }
-        val initialExpression = if (initial == null) {
+        val initialLiteral = if (initial == null) {
             "null"
         } else {
-            val literal = checker.literal(property, name, initial, resolvedType) ?: return null
-            if (mapper != null) "${mapper.prefix}.toStored($literal)" else literal
+            checker.literal(property, name, initial, resolvedType) ?: return null
         }
         val validator = checker.validator(
             property,
@@ -975,8 +974,8 @@ class DslProcessor(
             typeName = typeName,
             type = resolvedType,
             storageTypeName = mapper?.storageTypeName ?: typeName,
-            initialExpression = initialExpression,
-            mapper = mapper?.prefix,
+            initialLiteral = initialLiteral,
+            mapper = mapper?.target,
             validator = validator,
             message = checker.message(annotation, name),
         )
@@ -1035,7 +1034,7 @@ class DslProcessor(
         val elementTypeName = checker.renderTypeName(property, elementType, declarationElementType) ?: return null
         val listTypeName = checker.renderTypeName(property, type, declarationType) ?: return null
         val resolvedElementType = checker.expandAliases(elementType)
-        val validatorPrefix = checker.validator(property, name, annotation.type("validator"), resolvedElementType)
+        val validator = checker.validator(property, name, annotation.type("validator"), resolvedElementType)
         if (!checker.valid) return null
 
         val children = mutableListOf<ChildSpec>()
@@ -1073,7 +1072,7 @@ class DslProcessor(
             listTypeName,
             elementTypeName,
             resolvedElementType,
-            validatorPrefix,
+            validator,
             checker.message(annotation, name),
             children,
         )
@@ -2387,7 +2386,7 @@ class DslProcessor(
             propertyName: String,
             validatorType: KSType?,
             valueType: KSType,
-        ): String? {
+        ): Instantiation? {
             if (validatorType == null) return null
             val resolvedValidator = expandAliases(validatorType)
             if (resolvedValidator.isUnit()) return null
@@ -2418,7 +2417,7 @@ class DslProcessor(
                 )
                 return null
             }
-            val prefix = instantiationPrefix(property, propertyName, declaration, "validator") ?: return null
+            val prefix = instantiation(property, propertyName, declaration, "validator") ?: return null
             return prefix
         }
 
@@ -2474,19 +2473,18 @@ class DslProcessor(
                 )
                 return null
             }
-            val prefix = instantiationPrefix(property, propertyName, declaration, "mapper") ?: return null
+            val target = instantiation(property, propertyName, declaration, "mapper") ?: return null
             val storageTypeName = renderTypeName(property, storedType) ?: return null
-            return MapperInfo(prefix, storageTypeName, storedType)
+            return MapperInfo(target, storageTypeName, storedType)
         }
 
-        private fun instantiationPrefix(
+        private fun instantiation(
             property: KSPropertyDeclaration,
             propertyName: String,
             declaration: KSClassDeclaration,
             role: String,
-        ): String? {
-            val prefix = declaration.qualifiedName?.asString()
-            if (prefix == null) {
+        ): Instantiation? {
+            if (declaration.qualifiedName == null) {
                 report(property, "The $role of property $propertyName has no qualified name.")
                 return null
             }
@@ -2502,7 +2500,9 @@ class DslProcessor(
                 containingDeclaration = containingDeclaration.parentDeclaration
             }
             return when {
-                declaration.isCompanionObject || declaration.classKind == ClassKind.OBJECT -> prefix
+                declaration.isCompanionObject || declaration.classKind == ClassKind.OBJECT ->
+                    Instantiation(declaration.toClassName(), construct = false)
+
                 declaration.classKind == ClassKind.CLASS -> {
                     if (
                         Modifier.ABSTRACT in declaration.modifiers ||
@@ -2517,7 +2517,7 @@ class DslProcessor(
                             constructor.parameters.all { it.hasDefault || it.isVararg } &&
                             Modifier.PRIVATE !in constructor.modifiers &&
                             Modifier.PROTECTED !in constructor.modifiers
-                    if (callable) "$prefix()" else {
+                    if (callable) Instantiation(declaration.toClassName(), construct = true) else {
                         report(
                             property,
                             "The $role of property $propertyName is a class without an accessible constructor callable with no arguments."
@@ -2653,8 +2653,66 @@ class DslProcessor(
         val shorthands: List<PropertySpec>,
     )
 
+    /**
+     * A class or object reference used as an expression: an object is
+     * referenced by name, a class through its no-argument constructor.
+     */
+    private class Instantiation(
+        val type: ClassName,
+        val construct: Boolean,
+    ) {
+        fun code(context: FileContext): CodeBlock = context.expression(type, construct)
+    }
+
+    /**
+     * The naming state of one generated file: the simple names that are
+     * already in scope and the aliased imports that references need because of
+     * them.
+     */
+    private class FileContext(
+        private val shadowedNames: Set<String>,
+    ) {
+        private val aliases = mutableListOf<AliasRequest>()
+        private val aliasNames = mutableMapOf<String, String>()
+
+        fun isShadowed(name: String): Boolean = name in shadowedNames
+
+        /**
+         * Renders a reference to [type] as an expression. The name stays with
+         * KotlinPoet, which escapes it and manages its import; a name that is in
+         * scope in the generated file receives an alias instead.
+         */
+        fun expression(type: ClassName, construct: Boolean = false): CodeBlock {
+            val code = if (construct) CodeBlock.of("%T()", type) else CodeBlock.of("%T", type)
+            if (!isShadowed(type.simpleName)) return code
+            aliasOf(type)
+            return code
+        }
+
+        fun applyTo(builder: FileSpec.Builder) {
+            aliases.forEach { it.applyTo(builder) }
+        }
+
+        private fun aliasOf(type: ClassName): String =
+            aliasNames.getOrPut(type.canonicalName) {
+                var index = 2
+                var candidate = "${type.simpleName}Ref"
+                while (candidate in shadowedNames || candidate in aliasNames.values) {
+                    candidate = "${type.simpleName}Ref${index++}"
+                }
+                aliases += AliasRequest(type, candidate)
+                candidate
+            }
+
+        private data class AliasRequest(val type: ClassName, val alias: String) {
+            fun applyTo(builder: FileSpec.Builder) {
+                builder.addAliasedImport(type, alias)
+            }
+        }
+    }
+
     private data class MapperInfo(
-        val prefix: String,
+        val target: Instantiation,
         val storageTypeName: TypeName,
         val storedType: KSType,
     )
@@ -2663,7 +2721,7 @@ class DslProcessor(
         val name: String,
         val typeName: TypeName,
         val type: KSType,
-        val validator: String?,
+        val validator: Instantiation?,
         val message: String,
     )
 
@@ -2677,9 +2735,9 @@ class DslProcessor(
         val typeName: TypeName,
         val type: KSType,
         val storageTypeName: TypeName,
-        val initialExpression: String,
-        val mapper: String?,
-        val validator: String?,
+        val initialLiteral: String,
+        val mapper: Instantiation?,
+        val validator: Instantiation?,
         val message: String,
     ) {
         var fieldName: String = "${name}Field"
@@ -2690,7 +2748,7 @@ class DslProcessor(
         val typeName: TypeName,
         val elementTypeName: TypeName,
         val elementType: KSType,
-        val validator: String?,
+        val validator: Instantiation?,
         val message: String,
         val children: List<ChildSpec>,
     ) {
@@ -2796,6 +2854,20 @@ class DslProcessor(
             "kotlin.ExtensionFunctionType",
             "kotlin.ParameterName",
             "kotlin.UnsafeVariance",
+        )
+
+        /**
+         * Local names declared by generated function bodies; a reference that
+         * reuses one of them receives an aliased import.
+         */
+        val GENERATED_LOCAL_NAMES = setOf(
+            "newValue",
+            "stored",
+            "snapshot",
+            "element",
+            "childBuilder",
+            "block",
+            "builder",
         )
 
         const val EXTENSION_FUNCTION_TYPE = "ExtensionFunctionType"

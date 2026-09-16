@@ -1000,7 +1000,7 @@ class AliasHandlingTest {
     }
 
     @Test
-    fun `lowercase validator names are referenced by qualified names`() {
+    fun `lowercase validator names are referenced safely`() {
         val result = buildLowercaseValidator { value = 2 }
         assertEquals(2, result.value)
 
