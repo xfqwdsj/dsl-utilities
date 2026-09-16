@@ -964,3 +964,13 @@ interface HarmlessApplyParentDsl {
     @DslChild
     fun child(apply: Int, block: HarmlessApplyChildDsl.() -> Unit)
 }
+
+@Suppress("ClassName")
+class nestedContainer {
+    @Suppress("ClassName")
+    @DslBuilder
+    interface nestedSpecDsl {
+        @DslValue(initial = "nested")
+        var nested: String
+    }
+}

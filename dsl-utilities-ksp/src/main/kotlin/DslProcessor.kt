@@ -1056,7 +1056,7 @@ class DslProcessor(
             if (!acceptsResult) {
                 checker.report(
                     property,
-                    "Child ${child.specTypeName} produces ${child.resultType}, which is not assignable to the element type $elementTypeName of @DslList property $name."
+                    "Child ${child.specTypeName.canonicalName} produces ${child.resultType.canonicalName}, which is not assignable to the element type $elementTypeName of @DslList property $name."
                 )
                 return null
             }
@@ -2698,11 +2698,6 @@ class DslProcessor(
     }
 
     /**
-     * A DslBuilder interface used as a child: its generated builder, result
-     * class, and required properties are resolved by name so that the parent
-     * generated code can construct and build it.
-     */
-    /**
      * The Kotlin signature of a generated top-level function: its extension
      * receiver, the required value parameters, and the trailing child block.
      */
@@ -2712,6 +2707,11 @@ class DslProcessor(
         val blockReceiver: KSType,
     )
 
+    /**
+     * A DslBuilder interface used as a child: its generated builder and
+     * result classes are referenced as [ClassName] values so that the parent
+     * generated code can construct and build it.
+     */
     private class ChildSpec(
         val functionName: String,
         val specTypeName: ClassName,

@@ -1045,4 +1045,16 @@ class AliasHandlingTest {
         }
         assertEquals(1, result.child.apply)
     }
+
+    @Test
+    fun `specifications nested in lowercase containers render nested references`() {
+        val builder = java.io.File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "nestedSpecDslBuilder.kt" }
+        assertNotNull(builder, "nestedSpecDslBuilder.kt was not generated")
+        assertTrue(builder.readText().contains(": nestedContainer.nestedSpecDsl"), builder.readText())
+
+        val result = buildnestedSpec { nested = "value" }
+        assertEquals("value", result.nested)
+    }
 }
