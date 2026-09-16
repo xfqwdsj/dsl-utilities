@@ -847,3 +847,23 @@ interface ShadowingValueNameDsl {
     @DslChild
     fun child(childField: Int, block: ShadowingValueChildDsl.() -> Unit)
 }
+
+@DslBuilder
+interface ShadowedListChildDsl {
+    val items: MutableList<Any>
+}
+
+@DslBuilder
+interface ShadowedListHolderDsl {
+    @DslList(children = [ShadowedListChildDsl::class])
+    var items: MutableList<Any>
+}
+
+@DslBuilder
+interface BlockNamedListChildDsl
+
+@DslBuilder
+interface BlockNamedListHolderDsl {
+    @DslList(children = [BlockNamedListChildDsl::class])
+    var block: MutableList<Any>
+}

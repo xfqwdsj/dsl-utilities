@@ -975,4 +975,19 @@ class AliasHandlingTest {
         }
         assertEquals(3, value.child.childField)
     }
+
+    @Test
+    fun `list properties are not shadowed by element function parameters`() {
+        val caller = mutableListOf<Any>()
+        val holder = buildShadowedListHolder {
+            shadowedListChild(items = caller) { }
+        }
+        assertEquals(0, caller.size)
+        assertEquals(1, holder.items.size)
+
+        val blockHolder = buildBlockNamedListHolder {
+            blockNamedListChild { }
+        }
+        assertEquals(1, blockHolder.block.size)
+    }
 }
