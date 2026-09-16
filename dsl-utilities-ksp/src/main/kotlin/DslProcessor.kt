@@ -1036,6 +1036,10 @@ class DslProcessor(
             checker.report(function, "The block parameter of @DslChild function $name has no name.")
             return null
         }
+        if (blockParameter.isVararg) {
+            checker.report(function, "The block parameter of @DslChild function $name must not be vararg.")
+            return null
+        }
         val declaredBlockType = blockParameter.type.resolve()
         if (declaredBlockType.isError) {
             checker.reportUnresolved(function, "The last parameter of @DslChild function $name is not resolvable yet.")
@@ -1078,6 +1082,13 @@ class DslProcessor(
             )
             return null
         }
+        if (isReceiverStyle && arguments.size > 2) {
+            checker.report(
+                function,
+                "The last parameter of @DslChild function $name must not declare value parameters."
+            )
+            return null
+        }
         if ((!blockShape.isFunctionType && !isSuspend) || arguments.size != (if (isReceiverStyle) 2 else 1)) {
             checker.report(
                 function,
@@ -1103,7 +1114,10 @@ class DslProcessor(
             return null
         }
         val blockReturnType = arguments.last().type?.resolve()?.let { checker.expandAliases(it) }
-        if (blockReturnType?.declaration?.qualifiedName?.asString() != "kotlin.Unit") {
+        if (blockReturnType == null ||
+            blockReturnType.declaration.qualifiedName?.asString() != "kotlin.Unit" ||
+            blockReturnType.isMarkedNullable
+        ) {
             checker.report(
                 function,
                 "The last parameter of @DslChild function $name must return Unit."
@@ -1138,6 +1152,10 @@ class DslProcessor(
         for ((parameter, required) in declaredParameters.zip(child.required)) {
             val parameterName = parameter.name?.asString() ?: run {
                 checker.report(function, "A parameter of @DslChild function $name has no name.")
+                return null
+            }
+            if (parameter.isVararg) {
+                checker.report(function, "Parameter $parameterName of @DslChild function $name must not be vararg.")
                 return null
             }
             val declarationParameterType = parameter.type.resolve()
