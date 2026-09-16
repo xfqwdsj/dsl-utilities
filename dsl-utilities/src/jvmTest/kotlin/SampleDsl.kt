@@ -1030,3 +1030,9 @@ interface CaptureChildBuilderDsl {
     @DslChild
     fun NamedChildDslBuilder(block: NamedChildDsl.() -> Unit = {})
 }
+
+@DslBuilder
+interface MultilineInitialDsl {
+    @DslValue(initial = "first\nsecond")
+    var text: String
+}

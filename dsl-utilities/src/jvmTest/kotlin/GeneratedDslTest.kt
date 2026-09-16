@@ -1112,4 +1112,10 @@ class AliasHandlingTest {
         assertEquals(1, result.child.value)
         assertEquals(2, result.NamedChildDslBuilder.value)
     }
+
+    @Test
+    fun `multiline initial values are rendered as string literals`() {
+        val result = buildMultilineInitial { }
+        assertEquals("first\nsecond", result.text)
+    }
 }
