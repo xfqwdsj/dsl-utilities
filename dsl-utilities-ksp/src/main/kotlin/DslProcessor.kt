@@ -299,6 +299,11 @@ class DslProcessor(
             reservedBackingNames += property.fieldName
         }
         for (scope in childScopes) {
+            // The scope parameters and the block name are in scope inside the
+            // generated child function, so the backing field must not reuse
+            // one of them.
+            reservedBackingNames += scope.parameters.map { it.name }
+            reservedBackingNames += scope.blockName
             scope.fieldName = availableName("${scope.name}Field", reservedBackingNames)
             reservedBackingNames += scope.fieldName
         }
@@ -1090,9 +1095,19 @@ class DslProcessor(
             return null
         }
         if ((!blockShape.isFunctionType && !isSuspend) || arguments.size != (if (isReceiverStyle) 2 else 1)) {
+            val misplacedBlock = !blockShape.isFunctionType && !isSuspend &&
+                    parameters.dropLast(1).any { parameter ->
+                        val parameterShape = checker.aliasTarget(parameter.type.resolve())
+                        parameterShape.isFunctionType &&
+                                parameterShape.annotations.any { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }
+                    }
             checker.report(
                 function,
-                "The last parameter of @DslChild function $name must be a function type with the child DslBuilder interface as receiver and a Unit return type."
+                if (misplacedBlock) {
+                    "The block parameter of @DslChild function $name must be the last parameter."
+                } else {
+                    "The last parameter of @DslChild function $name must be a function type with the child DslBuilder interface as receiver and a Unit return type."
+                }
             )
             return null
         }
