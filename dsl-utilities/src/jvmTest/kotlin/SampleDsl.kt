@@ -1004,6 +1004,18 @@ interface NestedValidatorShadowDsl {
 @Suppress("unused", "ClassName")
 class newValueRef
 
+@Suppress("unused", "ClassName")
+class newValueRef_
+
+@DslBuilder
+interface EmptyInitialDsl {
+    @DslValue(initial = "")
+    var text: String
+
+    @DslValue(initial = "")
+    var nullable: String?
+}
+
 /**
  * Shadows the standard library function of the same name for declarations
  * of this package, so generated code has to bind the standard library

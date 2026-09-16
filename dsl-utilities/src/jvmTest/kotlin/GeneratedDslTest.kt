@@ -1089,7 +1089,7 @@ class AliasHandlingTest {
             .walkTopDown()
             .firstOrNull { it.name == "ShadowedValidatorDslBuilder.kt" }
         assertNotNull(builder, "ShadowedValidatorDslBuilder.kt was not generated")
-        assertTrue(builder.readText().contains("as newValueRef_"), builder.readText())
+        assertTrue(builder.readText().contains("as newValueRef__"), builder.readText())
 
         val result = buildShadowedValidator { value = 6 }
         assertEquals(6, result.value)
@@ -1125,5 +1125,12 @@ class AliasHandlingTest {
         assertEquals(Short.MIN_VALUE, result.short)
         assertEquals(Byte.MIN_VALUE, result.byte)
         assertEquals(Long.MIN_VALUE, result.long)
+    }
+
+    @Test
+    fun `an explicit empty initial value is an empty string`() {
+        val result = buildEmptyInitial { }
+        assertEquals("", result.text)
+        assertEquals("", result.nullable)
     }
 }
