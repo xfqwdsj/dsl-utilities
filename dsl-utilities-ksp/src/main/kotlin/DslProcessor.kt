@@ -79,6 +79,14 @@ class DslProcessor(
             logger.error("@DslBuilder.functionName of $specName requires generateFunction.", spec)
             return true
         }
+        if (!isSimpleIdentifier(names.resultName) || !isSimpleIdentifier(names.builderName)) {
+            logger.error("The result and builder names of $specName must be simple identifiers.", spec)
+            return true
+        }
+        if (names.generateFunction && !isSimpleIdentifier(names.functionName)) {
+            logger.error("@DslBuilder.functionName of $specName must be a simple identifier.", spec)
+            return true
+        }
 
         val checker = Checker(resolver, logger)
         val specQualifiedName = spec.qualifiedName?.asString()
@@ -296,12 +304,12 @@ class DslProcessor(
         )
 
         // The names that already exist in the generated file must not be
-        // reused by generated fields or locals.
+        // reused by generated backing fields.
         val allocator = NameAllocator()
         specMemberNames.forEach { allocator.newName(it) }
         allocator.newName(names.builderName)
         allocator.newName(names.resultName)
-        allocator.newName(names.functionName)
+        if (names.functionName.isNotEmpty()) allocator.newName(names.functionName)
         for (property in listProperties) {
             for (child in property.children) allocator.newName(child.functionName)
         }
@@ -2827,6 +2835,14 @@ class DslProcessor(
 
     private fun decapitalize(name: String): String =
         if (name.length >= 2 && name[1].isUpperCase()) name else name.replaceFirstChar { it.lowercase() }
+
+    /**
+     * Returns `true` when [name] is a simple identifier that can name a
+     * generated declaration. Names with separators or other characters cannot
+     * be emitted as class or function names.
+     */
+    private fun isSimpleIdentifier(name: String): Boolean =
+        NameAllocator(preallocateKeywords = false).newName(name) == name
 
     /**
      * The names of the generated classes and function for one DslBuilder
