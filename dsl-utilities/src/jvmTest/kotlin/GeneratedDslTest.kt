@@ -1089,7 +1089,7 @@ class AliasHandlingTest {
             .walkTopDown()
             .firstOrNull { it.name == "ShadowedValidatorDslBuilder.kt" }
         assertNotNull(builder, "ShadowedValidatorDslBuilder.kt was not generated")
-        assertTrue(builder.readText().contains("as newValueRef2"), builder.readText())
+        assertTrue(builder.readText().contains("as newValueRef_"), builder.readText())
 
         val result = buildShadowedValidator { value = 6 }
         assertEquals(6, result.value)

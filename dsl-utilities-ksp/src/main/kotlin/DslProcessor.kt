@@ -345,7 +345,10 @@ class DslProcessor(
             for (property in listProperties) {
                 add(property.name)
                 add(property.fieldName)
-                for (child in property.children) add(child.functionName)
+                for (child in property.children) {
+                    add(child.functionName)
+                    for (required in child.required) add(required.name)
+                }
             }
             for (scope in childScopes) {
                 add(scope.name)
@@ -641,13 +644,9 @@ class DslProcessor(
                 buildCode.addStatement("}")
             }
         }
-        val arguments = CodeBlock.builder()
-        var hasArguments = false
+        val arguments = mutableListOf<CodeBlock>()
         fun addArgument(name: String, format: String, vararg values: Any) {
-            if (hasArguments) arguments.add(", ")
-            arguments.add("%N = ", name)
-            arguments.add(format, *values)
-            hasArguments = true
+            arguments += CodeBlock.of("%N = $format", name, *values)
         }
         for (property in requiredProperties) addArgument(property.name, "%N", property.name)
         for (property in valueProperties) addArgument(property.name, "%N", property.name)
@@ -668,7 +667,7 @@ class DslProcessor(
                 .addModifiers(memberVisibility)
                 .returns(resultTypeName)
                 .addCode(buildCode.build())
-                .addStatement("return %T(%L)", resultTypeName, arguments.build())
+                .addStatement("return %T(%L)", resultTypeName, arguments.joinToCode(", "))
                 .build()
         )
         return builder.build()
@@ -2673,6 +2672,9 @@ class DslProcessor(
     ) {
         private val aliases = mutableListOf<AliasRequest>()
         private val aliasNames = mutableMapOf<String, String>()
+        private val aliasAllocator = NameAllocator().apply {
+            (shadowedNames + packageNames).forEach { newName(it) }
+        }
 
         fun isShadowed(name: String): Boolean = name in shadowedNames
 
@@ -2712,26 +2714,14 @@ class DslProcessor(
 
         private fun aliasOfType(type: ClassName): String =
             aliasNames.getOrPut(type.canonicalName) {
-                val seed = "${type.simpleName}Ref"
-                var index = 2
-                var candidate = seed
-                while (candidate in shadowedNames || candidate in packageNames || candidate in aliasNames.values) {
-                    candidate = "$seed${index++}"
-                }
-                aliases += AliasRequest.Type(type, candidate)
-                candidate
+                aliasAllocator.newName("${type.simpleName}Ref")
+                    .also { aliases += AliasRequest.Type(type, it) }
             }
 
         private fun aliasOfMember(member: MemberName): String =
             aliasNames.getOrPut(member.canonicalName) {
-                val seed = "stdlib${member.simpleName.replaceFirstChar { it.uppercase() }}"
-                var index = 2
-                var candidate = seed
-                while (candidate in shadowedNames || candidate in packageNames || candidate in aliasNames.values) {
-                    candidate = "$seed${index++}"
-                }
-                aliases += AliasRequest.Member(member, candidate)
-                candidate
+                aliasAllocator.newName("stdlib${member.simpleName.replaceFirstChar { it.uppercase() }}")
+                    .also { aliases += AliasRequest.Member(member, it) }
             }
 
         private sealed interface AliasRequest {
