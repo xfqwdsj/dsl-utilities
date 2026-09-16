@@ -1009,4 +1009,40 @@ class AliasHandlingTest {
 
         assertFailsWith<IllegalArgumentException> { buildLowercaseValidator { value = -1 } }
     }
+
+    @Test
+    fun `lowercase specification names generate builders`() {
+        val result = buildlowercaseSpec { value = 7 }
+        assertEquals(7, result.value)
+    }
+
+    @Test
+    fun `keyword validator names are referenced safely`() {
+        val result = buildKeywordValidator { value = 8 }
+        assertEquals(8, result.value)
+
+        assertFailsWith<IllegalArgumentException> { buildKeywordValidator { value = -1 } }
+    }
+
+    @Test
+    fun `standard library calls are qualified when a spec member shares the name`() {
+        val requireResult = buildShadowedRequire { value = 1 }
+        assertEquals(1, requireResult.value)
+        assertFailsWith<IllegalArgumentException> { buildShadowedRequire { value = -1 } }
+
+        assertFailsWith<IllegalArgumentException> { buildShadowedRequireNotNull { } }
+        val requireNotNullResult = buildShadowedRequireNotNull { child { } }
+        assertNotNull(requireNotNullResult.child)
+
+        val listResult = buildShadowedList { items = mutableListOf(1, 2, 3) }
+        assertEquals(listOf(1, 2, 3), listResult.items)
+    }
+
+    @Test
+    fun `child members named apply do not block the child scope`() {
+        val result = buildHarmlessApplyParent {
+            child(apply = 1) { }
+        }
+        assertEquals(1, result.child.apply)
+    }
 }

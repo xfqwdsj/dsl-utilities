@@ -901,3 +901,66 @@ interface ShadowedValidatorDsl {
     @DslValue(initial = "0", validator = newValue::class)
     var value: Int
 }
+
+@Suppress("ClassName")
+@DslBuilder
+interface lowercaseSpecDsl {
+    @DslValue(initial = "0")
+    var value: Int
+}
+
+@Suppress("ClassName")
+object `when` : DslValidator<Int> {
+    override fun validate(value: Int) = value >= 0
+}
+
+@DslBuilder
+interface KeywordValidatorDsl {
+    @DslValue(initial = "0", validator = `when`::class)
+    var value: Int
+}
+
+@DslBuilder
+interface ShadowedRequireDsl {
+    fun require(value: Boolean, lazyMessage: () -> Any) {}
+
+    @DslValue(initial = "0", validator = fieldValidator::class)
+    var value: Int
+}
+
+@DslBuilder
+interface ShadowedRequireNotNullChildDsl
+
+@DslBuilder
+interface ShadowedRequireNotNullDsl {
+    fun <T> requireNotNull(value: T?, lazyMessage: () -> Any): T = value ?: error("shadowed")
+
+    @DslChild
+    fun child(block: ShadowedRequireNotNullChildDsl.() -> Unit = {})
+}
+
+@DslBuilder
+interface ShadowedListDsl {
+    fun <T> mutableListOf(): MutableList<T> = error("shadowed")
+
+    fun List<Any>.toList(): List<Any> = emptyList()
+
+    @DslList
+    var items: MutableList<Any>
+}
+
+@Suppress("unused")
+@DslBuilder
+interface HarmlessApplyChildDsl {
+    val apply: Int
+
+    fun apply() {}
+
+    fun apply(value: Int) {}
+}
+
+@DslBuilder
+interface HarmlessApplyParentDsl {
+    @DslChild
+    fun child(apply: Int, block: HarmlessApplyChildDsl.() -> Unit)
+}
