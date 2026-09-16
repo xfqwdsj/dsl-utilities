@@ -990,4 +990,23 @@ class AliasHandlingTest {
         }
         assertEquals(1, blockHolder.block.size)
     }
+
+    @Test
+    fun `entry block runs when a child scope shares its name`() {
+        val result = buildEntryBlockCapture {
+            block { touched = true }
+        }
+        assertTrue(result.block.touched)
+    }
+
+    @Test
+    fun `lowercase validator names are referenced by qualified names`() {
+        val result = buildLowercaseValidator { value = 2 }
+        assertEquals(2, result.value)
+
+        val shadowed = buildShadowedValidator { value = 3 }
+        assertEquals(3, shadowed.value)
+
+        assertFailsWith<IllegalArgumentException> { buildLowercaseValidator { value = -1 } }
+    }
 }

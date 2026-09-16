@@ -867,3 +867,37 @@ interface BlockNamedListHolderDsl {
     @DslList(children = [BlockNamedListChildDsl::class])
     var block: MutableList<Any>
 }
+
+@DslBuilder
+interface EntryBlockChildDsl {
+    @DslValue(initial = "false")
+    var touched: Boolean
+}
+
+@DslBuilder
+interface EntryBlockCaptureDsl {
+    @DslChild
+    fun block(block: EntryBlockChildDsl.() -> Unit = {})
+}
+
+@Suppress("ClassName")
+object fieldValidator : DslValidator<Int> {
+    override fun validate(value: Int) = value >= 0
+}
+
+@DslBuilder
+interface LowercaseValidatorDsl {
+    @DslValue(initial = "0", validator = fieldValidator::class)
+    var value: Int
+}
+
+@Suppress("ClassName")
+object newValue : DslValidator<Int> {
+    override fun validate(value: Int) = value >= 0
+}
+
+@DslBuilder
+interface ShadowedValidatorDsl {
+    @DslValue(initial = "0", validator = newValue::class)
+    var value: Int
+}
