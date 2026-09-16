@@ -958,13 +958,13 @@ class AliasHandlingTest {
             .walkTopDown()
             .firstOrNull { it.name == "ShadowingBlockNameDslBuilder.kt" }
         assertNotNull(blockName, "ShadowingBlockNameDslBuilder.kt was not generated")
-        assertTrue(blockName.readText().contains("childField2"), blockName.readText())
+        assertTrue(blockName.readText().contains("childField_"), blockName.readText())
 
         val valueName = java.io.File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "ShadowingValueNameDslBuilder.kt" }
         assertNotNull(valueName, "ShadowingValueNameDslBuilder.kt was not generated")
-        assertTrue(valueName.readText().contains("childField2"), valueName.readText())
+        assertTrue(valueName.readText().contains("childField_"), valueName.readText())
 
         val block = buildShadowingBlockName {
             child { }

@@ -295,24 +295,30 @@ class DslProcessor(
             )
         )
 
-        val reservedBackingNames = specProperties
-            .mapTo(mutableSetOf()) { it.declaration.simpleName.asString() }
+        // The names that already exist in the generated file must not be
+        // reused by generated fields or locals.
+        val allocator = NameAllocator()
+        specMemberNames.forEach { allocator.newName(it) }
+        allocator.newName(names.builderName)
+        allocator.newName(names.resultName)
+        allocator.newName(names.functionName)
+        for (property in listProperties) {
+            for (child in property.children) allocator.newName(child.functionName)
+        }
         for (property in valueProperties) {
-            property.fieldName = availableName("${property.name}Field", reservedBackingNames)
-            reservedBackingNames += property.fieldName
+            property.fieldName = allocator.newName("${property.name}Field")
         }
         for (property in listProperties) {
-            property.fieldName = availableName("${property.name}Field", reservedBackingNames)
-            reservedBackingNames += property.fieldName
+            property.fieldName = allocator.newName("${property.name}Field")
         }
         for (scope in childScopes) {
             // The scope parameters and the block name are in scope inside the
             // generated child function, so the backing field must not reuse
             // one of them.
-            reservedBackingNames += scope.parameters.map { it.name }
-            reservedBackingNames += scope.blockName
-            scope.fieldName = availableName("${scope.name}Field", reservedBackingNames)
-            reservedBackingNames += scope.fieldName
+            val scopeNames = allocator.copy()
+            scope.parameters.forEach { scopeNames.newName(it.name) }
+            scopeNames.newName(scope.blockName)
+            scope.fieldName = allocator.newName(scopeNames.newName("${scope.name}Field"))
         }
 
         // Simple names that are already in scope in the generated file: the
@@ -382,6 +388,7 @@ class DslProcessor(
                 builderTypeName,
                 resultTypeName,
                 requiredProperties,
+                context,
             )
         } else {
             null
@@ -583,7 +590,9 @@ class DslProcessor(
             val parameters = property.parameters.map { ParameterSpec.builder(it.name, it.typeName).build() } +
                     ParameterSpec.builder(property.blockName, property.blockTypeName).build()
             val arguments = requiredArguments(property.child.required)
-            val childBuilderName = availableName("childBuilder", parameters.map { it.name })
+            val scope = context.scope()
+            parameters.forEach { scope.newName(it.name) }
+            val childBuilderName = scope.newName("childBuilder")
             builder.addFunction(
                 FunSpec.builder(property.name)
                     .addModifiers(KModifier.OVERRIDE)
@@ -710,12 +719,11 @@ class DslProcessor(
         val shorthands = mutableListOf<PropertySpec>()
         for (property in listProperties) {
             for (child in property.children) {
-                val blockName = availableName("block", child.required.map { it.name })
+                val scope = context.scope()
+                child.required.forEach { scope.newName(it.name) }
+                val blockName = scope.newName("block")
+                val childBuilderName = scope.newName("childBuilder")
                 val arguments = requiredArguments(child.required)
-                val childBuilderName = availableName("childBuilder", child.required.map { it.name } + blockName)
-                // A parameter or the block name equal to the list property name
-                // would shadow the property inside the generated function.
-                val shadowed = property.name == blockName || child.required.any { it.name == property.name }
                 val visibility = restrictiveVisibility(
                     listOf(parentVisibility, child.builderVisibility, child.resultVisibility)
                 )
@@ -745,15 +753,7 @@ class DslProcessor(
                         arguments,
                     )
                     .addStatement("%N.invoke(%N)", blockName, childBuilderName)
-                    .addStatement(
-                        if (shadowed) {
-                            "this.%N.add(%N.build())"
-                        } else {
-                            "%N.add(%N.build())"
-                        },
-                        property.name,
-                        childBuilderName,
-                    )
+                    .addStatement("this.%N.add(%N.build())", property.name, childBuilderName)
                     .build()
                 if (child.required.isEmpty() && !child.requiresConfiguration) {
                     shorthands += PropertySpec.builder(child.functionName, UNIT)
@@ -783,10 +783,12 @@ class DslProcessor(
         builderTypeName: ClassName,
         resultTypeName: ClassName,
         requiredProperties: List<RequiredProperty>,
+        context: FileContext,
     ): FunSpec {
-        val requiredNames = requiredProperties.map { it.name }
-        val blockName = availableName("block", requiredNames)
-        val builderName = availableName("builder", requiredNames + blockName)
+        val scope = context.scope()
+        requiredProperties.forEach { scope.newName(it.name) }
+        val blockName = scope.newName("block")
+        val builderName = scope.newName("builder")
         val arguments = requiredArguments(requiredProperties)
         return FunSpec.builder(names.functionName)
             .addModifiers(visibility, KModifier.INLINE)
@@ -838,17 +840,6 @@ class DslProcessor(
                 }
             }
             .build()
-
-    /**
-     * Returns [preferred] unless it is reserved, otherwise adds the first free
-     * numeric suffix.
-     */
-    private fun availableName(preferred: String, reserved: Collection<String>): String {
-        if (preferred !in reserved) return preferred
-        var suffix = 2
-        while ("$preferred$suffix" in reserved) suffix++
-        return "$preferred$suffix"
-    }
 
     private fun ValueProperty.nameField(): String = fieldName
 
@@ -2667,6 +2658,9 @@ class DslProcessor(
         private val aliasNames = mutableMapOf<String, String>()
 
         fun isShadowed(name: String): Boolean = name in shadowedNames
+
+        /** Returns an allocator for the locals of one generated function body. */
+        fun scope(): NameAllocator = NameAllocator()
 
         /**
          * Renders a reference to a top-level function or property. The explicit
