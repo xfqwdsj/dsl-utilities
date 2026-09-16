@@ -439,16 +439,6 @@ class DslProcessor(
         childScopes: List<ChildScope>,
         context: FileContext,
     ): TypeSpec {
-        // A member of the spec can capture an unqualified standard library
-        // call in the generated code, so a name the spec declares is
-        // qualified.
-        fun stdlibCall(name: String, packageName: String): String =
-            if (context.isShadowed(name)) "$packageName.$name" else name
-
-        val requireCall = stdlibCall("require", "kotlin")
-        val requireNotNullCall = stdlibCall("requireNotNull", "kotlin")
-        val mutableListOfCall = stdlibCall("mutableListOf", "kotlin.collections")
-        val shadowedToList = context.isShadowed("toList")
         val builder = TypeSpec.classBuilder(builderTypeName)
             .addModifiers(visibility)
             .primaryConstructor(
@@ -492,7 +482,7 @@ class DslProcessor(
                     MUTABLE_LIST.parameterizedBy(property.elementTypeName),
                     KModifier.PRIVATE,
                 )
-                    .initializer("$mutableListOfCall()")
+                    .initializer(CodeBlock.of("%L()", context.member(MUTABLE_LIST_OF)))
                     .build()
             )
         }
@@ -525,7 +515,8 @@ class DslProcessor(
                     if (property.mapper == null) {
                         if (property.validator != null) {
                             addStatement(
-                                "$requireCall(%L.validate(newValue)) { %S }",
+                                "%L(%L.validate(newValue)) { %S }",
+                                context.member(REQUIRE),
                                 property.validator.code(context),
                                 property.message
                             )
@@ -535,7 +526,8 @@ class DslProcessor(
                         addStatement("val stored = %L.toStored(newValue)", property.mapper.code(context))
                         if (property.validator != null) {
                             addStatement(
-                                "$requireCall(%L.validate(stored)) { %S }",
+                                "%L(%L.validate(stored)) { %S }",
+                                context.member(REQUIRE),
                                 property.validator.code(context),
                                 property.message
                             )
@@ -557,7 +549,8 @@ class DslProcessor(
             if (property.validator != null) {
                 builder.addInitializerBlock(
                     CodeBlock.of(
-                        "$requireCall(%L.validate(%N)) { %S }\n",
+                        "%L(%L.validate(%N)) { %S }\n",
+                        context.member(REQUIRE),
                         property.validator.code(context),
                         property.nameField(),
                         property.message,
@@ -569,13 +562,7 @@ class DslProcessor(
         for (property in listProperties) {
             val setter = FunSpec.setterBuilder()
                 .addParameter("newValue", property.typeName)
-                .addStatement(
-                    if (shadowedToList) {
-                        "val snapshot = kotlin.collections.ArrayList(newValue)"
-                    } else {
-                        "val snapshot = newValue.toList()"
-                    }
-                )
+                .addStatement("val snapshot = newValue.%L()", context.member(TO_LIST))
                 .addStatement("%N.clear()", property.nameField())
                 .addStatement("%N.addAll(snapshot)", property.nameField())
                 .build()
@@ -617,7 +604,8 @@ class DslProcessor(
         for (property in requiredProperties) {
             if (property.validator != null) {
                 buildCode.addStatement(
-                    "$requireCall(%L.validate(%N)) { %S }",
+                    "%L(%L.validate(%N)) { %S }",
+                    context.member(REQUIRE),
                     property.validator.code(context),
                     property.name,
                     property.message,
@@ -628,7 +616,8 @@ class DslProcessor(
             if (property.validator != null) {
                 buildCode.addStatement("for (element in %N) {", property.nameField())
                 buildCode.addStatement(
-                    "$requireCall(%L.validate(element)) { %S }",
+                    "%L(%L.validate(element)) { %S }",
+                    context.member(REQUIRE),
                     property.validator.code(context),
                     property.message,
                 )
@@ -646,16 +635,13 @@ class DslProcessor(
         for (property in requiredProperties) addArgument(property.name, "%N", property.name)
         for (property in valueProperties) addArgument(property.name, "%N", property.name)
         for (property in listProperties) {
-            addArgument(
-                property.name,
-                if (shadowedToList) "kotlin.collections.ArrayList(%N)" else "%N.toList()",
-                property.nameField(),
-            )
+            addArgument(property.name, "%N.%L()", property.nameField(), context.member(TO_LIST))
         }
         for (property in childScopes) {
             addArgument(
                 property.name,
-                "$requireNotNullCall(%N) { %S }",
+                "%L(%N) { %S }",
+                context.member(REQUIRE_NOT_NULL),
                 property.nameField(),
                 "Property ${property.name} is required.",
             )
@@ -2682,6 +2668,18 @@ class DslProcessor(
         fun isShadowed(name: String): Boolean = name in shadowedNames
 
         /**
+         * Renders a reference to a top-level function or property. The explicit
+         * import that KotlinPoet adds keeps the reference bound to the declaration
+         * even when the package declares one of the same name; a name that is in
+         * scope in the generated file receives an alias.
+         */
+        fun member(member: MemberName): CodeBlock {
+            val code = CodeBlock.of("%M", member)
+            if (isShadowed(member.simpleName)) aliasOfMember(member)
+            return code
+        }
+
+        /**
          * Renders a reference to [type] as an expression. The name stays with
          * KotlinPoet, which escapes it and manages its import; a name that is in
          * scope in the generated file receives an alias instead. Nested types
@@ -2692,7 +2690,7 @@ class DslProcessor(
             val code = if (construct) CodeBlock.of("%T()", type) else CodeBlock.of("%T", type)
             val topLevelName = type.topLevelClassName().simpleName
             if (!isShadowed(type.simpleName) && !isShadowed(topLevelName)) return code
-            aliasOf(type)
+            aliasOfType(type)
             return code
         }
 
@@ -2700,20 +2698,45 @@ class DslProcessor(
             aliases.forEach { it.applyTo(builder) }
         }
 
-        private fun aliasOf(type: ClassName): String =
+        private fun aliasOfType(type: ClassName): String =
             aliasNames.getOrPut(type.canonicalName) {
+                val seed = "${type.simpleName}Ref"
                 var index = 2
-                var candidate = "${type.simpleName}Ref"
+                var candidate = seed
                 while (candidate in shadowedNames || candidate in packageNames || candidate in aliasNames.values) {
-                    candidate = "${type.simpleName}Ref${index++}"
+                    candidate = "$seed${index++}"
                 }
-                aliases += AliasRequest(type, candidate)
+                aliases += AliasRequest.Type(type, candidate)
                 candidate
             }
 
-        private data class AliasRequest(val type: ClassName, val alias: String) {
-            fun applyTo(builder: FileSpec.Builder) {
-                builder.addAliasedImport(type, alias)
+        private fun aliasOfMember(member: MemberName): String =
+            aliasNames.getOrPut(member.canonicalName) {
+                val seed = "stdlib${member.simpleName.replaceFirstChar { it.uppercase() }}"
+                var index = 2
+                var candidate = seed
+                while (candidate in shadowedNames || candidate in packageNames || candidate in aliasNames.values) {
+                    candidate = "$seed${index++}"
+                }
+                aliases += AliasRequest.Member(member, candidate)
+                candidate
+            }
+
+        private sealed interface AliasRequest {
+            val alias: String
+
+            fun applyTo(builder: FileSpec.Builder)
+
+            data class Type(val type: ClassName, override val alias: String) : AliasRequest {
+                override fun applyTo(builder: FileSpec.Builder) {
+                    builder.addAliasedImport(type, alias)
+                }
+            }
+
+            data class Member(val member: MemberName, override val alias: String) : AliasRequest {
+                override fun applyTo(builder: FileSpec.Builder) {
+                    builder.addAliasedImport(member, alias)
+                }
             }
         }
     }
@@ -2882,6 +2905,11 @@ class DslProcessor(
         const val PARAMETER_NAME = "ParameterName"
 
         val ANY: ClassName = Any::class.asClassName()
+
+        val REQUIRE = MemberName("kotlin", "require")
+        val REQUIRE_NOT_NULL = MemberName("kotlin", "requireNotNull")
+        val MUTABLE_LIST_OF = MemberName("kotlin.collections", "mutableListOf")
+        val TO_LIST = MemberName("kotlin.collections", "toList")
     }
 }
 

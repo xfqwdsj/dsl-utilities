@@ -1025,7 +1025,7 @@ class AliasHandlingTest {
     }
 
     @Test
-    fun `standard library calls are qualified when a spec member shares the name`() {
+    fun `standard library calls are not captured by spec members`() {
         val requireResult = buildShadowedRequire { value = 1 }
         assertEquals(1, requireResult.value)
         assertFailsWith<IllegalArgumentException> { buildShadowedRequire { value = -1 } }
@@ -1036,6 +1036,14 @@ class AliasHandlingTest {
 
         val listResult = buildShadowedList { items = mutableListOf(1, 2, 3) }
         assertEquals(listOf(1, 2, 3), listResult.items)
+    }
+
+    @Test
+    fun `standard library calls bind their import when the package declares one`() {
+        val result = buildLowercaseValidator { value = 7 }
+        assertEquals(7, result.value)
+
+        assertFailsWith<IllegalArgumentException> { buildLowercaseValidator { value = -1 } }
     }
 
     @Test

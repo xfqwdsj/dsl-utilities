@@ -1003,3 +1003,13 @@ interface NestedValidatorShadowDsl {
 
 @Suppress("unused", "ClassName")
 class newValueRef
+
+/**
+ * Shadows the standard library function of the same name for declarations
+ * of this package, so generated code has to bind the standard library
+ * function through its explicit import.
+ */
+@Suppress("unused")
+fun require(value: Boolean, lazyMessage: () -> Any) {
+    error("The package-level require must not be reached from generated code.")
+}
