@@ -740,7 +740,7 @@ class DslProcessor(
             )
             .returns(resultTypeName)
             .addStatement("val %N = %T(%L)", builderName, builderTypeName, arguments)
-            .addStatement("%N.%N()", builderName, blockName)
+            .addStatement("%N.invoke(%N)", blockName, builderName)
             .addStatement("return %N.build()", builderName)
             .build()
     }
@@ -787,7 +787,18 @@ class DslProcessor(
 
     /** The receiver expression that invokes an object or a no-argument class. */
     private fun invocation(prefix: String): CodeBlock {
-        val type = classNameOf(prefix.removeSuffix("()"))
+        val className = prefix.removeSuffix("()")
+        val simpleName = className.substringAfterLast('.')
+        if (simpleName.firstOrNull()?.isLowerCase() == true) {
+            // A lowercase name can be captured by a generated local or member,
+            // so it is referenced by its qualified name.
+            return if (prefix.endsWith("()")) {
+                CodeBlock.of("%L()", className)
+            } else {
+                CodeBlock.of("%L", className)
+            }
+        }
+        val type = classNameOf(className)
         return if (prefix.endsWith("()")) CodeBlock.of("%T()", type) else CodeBlock.of("%T", type)
     }
 
@@ -1256,6 +1267,15 @@ class DslProcessor(
             return null
         }
         val hierarchy = Hierarchy(checker, reportedStarProjections)
+        // Generated code applies the DSL block to the child builder with
+        // apply, so a member of that name would capture the call.
+        val applyMember = hierarchy.allProperties(declaration).map { it.declaration }
+            .plus(hierarchy.allFunctions(declaration).map { it.declaration })
+            .firstOrNull { it.simpleName.asString() == "apply" }
+        if (applyMember != null) {
+            checker.report(applyMember, "Child DslBuilder interface $specName must not declare a member named apply.")
+            return null
+        }
         val required = mutableListOf<RequiredProperty>()
         for (member in hierarchy.allProperties(declaration).filter { hierarchy.isAbstract(it.declaration) }) {
             val property = member.declaration
