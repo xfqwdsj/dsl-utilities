@@ -479,9 +479,9 @@ class DslProcessor(
         }
         for (property in valueProperties) {
             val initializer = if (property.mapper != null) {
-                CodeBlock.of("%L.toStored(%L)", property.mapper.code(context), property.initialLiteral)
+                CodeBlock.of("%L.toStored(%L)", property.mapper.code(context), property.initialValue)
             } else {
-                CodeBlock.of("%L", property.initialLiteral)
+                property.initialValue
             }
             builder.addProperty(
                 PropertySpec.builder(property.nameField(), property.storageTypeName, KModifier.PRIVATE)
@@ -946,8 +946,8 @@ class DslProcessor(
                 return null
             }
         }
-        val initialLiteral = if (initial == null) {
-            "null"
+        val initialValue = if (initial == null) {
+            CodeBlock.of("null")
         } else {
             checker.literal(property, name, initial, resolvedType) ?: return null
         }
@@ -963,7 +963,7 @@ class DslProcessor(
             typeName = typeName,
             type = resolvedType,
             storageTypeName = mapper?.storageTypeName ?: typeName,
-            initialLiteral = initialLiteral,
+            initialValue = initialValue,
             mapper = mapper?.target,
             validator = validator,
             message = checker.message(annotation, name),
@@ -2526,51 +2526,60 @@ class DslProcessor(
          * Renders a compile-time constant written in string form as a Kotlin
          * literal expression of the property type.
          */
-        fun literal(property: KSPropertyDeclaration, propertyName: String, initial: String, type: KSType): String? {
-            fun fail(detail: String): String? {
+        fun literal(property: KSPropertyDeclaration, propertyName: String, initial: String, type: KSType): CodeBlock? {
+            fun fail(detail: String): CodeBlock? {
                 report(property, "@DslValue.initial of property $propertyName is \"$initial\", which is $detail.")
                 return null
             }
 
+            fun number(text: String): CodeBlock = CodeBlock.of("%L", text)
+
             val literalType = expandAliases(type).makeNotNullable()
             return when (literalType.declaration.qualifiedName?.asString()) {
-                "kotlin.Int" -> initial.toLongOrNull()?.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }?.toString()
+                "kotlin.Int" -> initial.toLongOrNull()?.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }
+                    ?.let { number(it.toString()) }
                     ?: fail("not an Int constant")
 
-                "kotlin.Long" -> initial.toLongOrNull()?.let { "${it}L" } ?: fail("not a Long constant")
+                "kotlin.Long" -> initial.toLongOrNull()?.let { number("${it}L") } ?: fail("not a Long constant")
                 "kotlin.Short" -> initial.toLongOrNull()?.takeIf { it in Short.MIN_VALUE..Short.MAX_VALUE }
-                    ?.let { "$it.toShort()" }
+                    ?.let { number("$it.toShort()") }
                     ?: fail("not a Short constant")
 
                 "kotlin.Byte" -> initial.toLongOrNull()?.takeIf { it in Byte.MIN_VALUE..Byte.MAX_VALUE }
-                    ?.let { "$it.toByte()" }
+                    ?.let { number("$it.toByte()") }
                     ?: fail("not a Byte constant")
 
                 "kotlin.Double" -> initial.toDoubleOrNull()?.takeIf(Double::isFinite)
-                    ?.let(::formatFloatingPoint)
+                    ?.let { number(formatFloatingPoint(it)) }
                     ?: fail("not a finite Double constant")
 
                 "kotlin.Float" -> initial.toFloatOrNull()?.takeIf(Float::isFinite)
-                    ?.let { "${formatFloatingPoint(it.toDouble())}f" }
+                    ?.let { number("${formatFloatingPoint(it.toDouble())}f") }
                     ?: fail("not a finite Float constant")
 
                 "kotlin.Boolean" -> when (initial) {
-                    "true", "false" -> initial
+                    "true", "false" -> number(initial)
                     else -> fail("not a Boolean constant")
                 }
 
-                "kotlin.Char" -> if (initial.length == 1) "'${escapeCharLiteral(initial[0])}'" else fail("not a single character")
-                "kotlin.String" -> "\"${escapeStringLiteral(initial)}\""
-                "kotlin.UInt" -> initial.toLongOrNull()?.takeIf { it in 0..UInt.MAX_VALUE.toLong() }?.let { "${it}u" }
+                "kotlin.Char" -> if (initial.length == 1) {
+                    CodeBlock.of("'%L'", escapeCharLiteral(initial[0]))
+                } else {
+                    fail("not a single character")
+                }
+
+                "kotlin.String" -> CodeBlock.of("%S", initial)
+                "kotlin.UInt" -> initial.toLongOrNull()?.takeIf { it in 0..UInt.MAX_VALUE.toLong() }
+                    ?.let { number("${it}u") }
                     ?: fail("not a UInt constant")
 
-                "kotlin.ULong" -> initial.toULongOrNull()?.let { "${it}uL" } ?: fail("not a ULong constant")
+                "kotlin.ULong" -> initial.toULongOrNull()?.let { number("${it}uL") } ?: fail("not a ULong constant")
                 "kotlin.UShort" -> initial.toLongOrNull()?.takeIf { it in 0..UShort.MAX_VALUE.toLong() }
-                    ?.let { "$it.toUShort()" }
+                    ?.let { number("$it.toUShort()") }
                     ?: fail("not a UShort constant")
 
                 "kotlin.UByte" -> initial.toLongOrNull()?.takeIf { it in 0..UByte.MAX_VALUE.toLong() }
-                    ?.let { "$it.toUByte()" }
+                    ?.let { number("$it.toUByte()") }
                     ?: fail("not a UByte constant")
 
                 else -> {
@@ -2768,7 +2777,7 @@ class DslProcessor(
         val typeName: TypeName,
         val type: KSType,
         val storageTypeName: TypeName,
-        val initialLiteral: String,
+        val initialValue: CodeBlock,
         val mapper: Instantiation?,
         val validator: Instantiation?,
         val message: String,
@@ -2952,20 +2961,6 @@ private fun KSAnnotation.typeArray(name: String): List<KSType> =
             }
         }
         .orEmpty()
-
-private fun escapeStringLiteral(value: String): String = buildString {
-    for (character in value) {
-        when (character) {
-            '\\' -> append("\\\\")
-            '"' -> append("\\\"")
-            '\n' -> append("\\n")
-            '\r' -> append("\\r")
-            '\t' -> append("\\t")
-            '$' -> append("\\$")
-            else -> append(character)
-        }
-    }
-}
 
 private fun escapeCharLiteral(character: Char): String = when (character) {
     '\\' -> "\\\\"
