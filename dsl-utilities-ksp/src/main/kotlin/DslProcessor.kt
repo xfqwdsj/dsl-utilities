@@ -653,6 +653,9 @@ class DslProcessor(
             for (child in property.children) {
                 val blockName = availableName("block", child.required.map { it.name })
                 val arguments = requiredArguments(child.required)
+                // A parameter or the block name equal to the list property name
+                // would shadow the property inside the generated function.
+                val shadowed = property.name == blockName || child.required.any { it.name == property.name }
                 val visibility = restrictiveVisibility(
                     listOf(parentVisibility, child.builderVisibility, child.resultVisibility)
                 )
@@ -676,7 +679,11 @@ class DslProcessor(
                             .build()
                     )
                     .addStatement(
-                        "%N.add(%T(%L).apply(%N).build())",
+                        if (shadowed) {
+                            "this.%N.add(%T(%L).apply(%N).build())"
+                        } else {
+                            "%N.add(%T(%L).apply(%N).build())"
+                        },
                         property.name,
                         classNameOf(child.builderQualifiedName),
                         arguments,
@@ -1097,9 +1104,18 @@ class DslProcessor(
         if ((!blockShape.isFunctionType && !isSuspend) || arguments.size != (if (isReceiverStyle) 2 else 1)) {
             val misplacedBlock = !blockShape.isFunctionType && !isSuspend &&
                     parameters.dropLast(1).any { parameter ->
-                        val parameterShape = checker.aliasTarget(parameter.type.resolve())
+                        val declaredParameterType = parameter.type.resolve()
+                        val parameterShape = checker.aliasTarget(
+                            if (declaredParameterType.declaration is KSTypeParameter) {
+                                checker.substituteType(declaredParameterType, environment)
+                            } else {
+                                declaredParameterType
+                            }
+                        )
                         parameterShape.isFunctionType &&
-                                parameterShape.annotations.any { it.shortName.asString() == EXTENSION_FUNCTION_TYPE }
+                                parameterShape.annotations.any { it.shortName.asString() == EXTENSION_FUNCTION_TYPE } &&
+                                (parameterShape.arguments.firstOrNull()?.type?.resolve()?.declaration as? KSClassDeclaration)
+                                    ?.annotation(DSL_BUILDER_ANNOTATION) != null
                     }
             checker.report(
                 function,
