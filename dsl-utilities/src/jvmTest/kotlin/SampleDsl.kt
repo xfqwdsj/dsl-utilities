@@ -1007,9 +1007,26 @@ class newValueRef
 /**
  * Shadows the standard library function of the same name for declarations
  * of this package, so generated code has to bind the standard library
- * function through its explicit import.
+ * function through its explicit import. Tests in this package must import
+ * [kotlin.require] explicitly before calling it.
  */
 @Suppress("unused")
 fun require(value: Boolean, lazyMessage: () -> Any) {
     error("The package-level require must not be reached from generated code.")
+}
+
+@DslBuilder
+interface NamedChildDsl {
+    @DslValue(initial = "0")
+    var value: Int
+}
+
+@DslBuilder
+interface CaptureChildBuilderDsl {
+    @DslChild
+    fun child(block: NamedChildDsl.() -> Unit = {})
+
+    @Suppress("TestFunctionName")
+    @DslChild
+    fun NamedChildDslBuilder(block: NamedChildDsl.() -> Unit = {})
 }

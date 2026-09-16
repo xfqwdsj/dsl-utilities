@@ -373,7 +373,7 @@ class DslProcessor(
         )
         val resultType =
             resultType(resultTypeName, resultVisibility, resultProperties, supertypeTypeName, supertypeOverrides)
-        val elementFunctions = elementFunctions(specTypeName, visibility, listProperties)
+        val elementFunctions = elementFunctions(specTypeName, visibility, listProperties, context)
         val buildFunction = if (names.generateFunction) {
             buildFunction(
                 names,
@@ -589,9 +589,9 @@ class DslProcessor(
                     .addModifiers(KModifier.OVERRIDE)
                     .addParameters(parameters)
                     .addStatement(
-                        "val %N = %T(%L)",
+                        "val %N = %L(%L)",
                         childBuilderName,
-                        property.child.builderType,
+                        context.expression(property.child.builderType),
                         arguments,
                     )
                     .addStatement("%N.invoke(%N)", property.blockName, childBuilderName)
@@ -704,6 +704,7 @@ class DslProcessor(
         specTypeName: ClassName,
         parentVisibility: KModifier,
         listProperties: List<ListProperty>,
+        context: FileContext,
     ): ElementFunctions {
         val functions = mutableListOf<FunSpec>()
         val shorthands = mutableListOf<PropertySpec>()
@@ -738,9 +739,9 @@ class DslProcessor(
                             .build()
                     )
                     .addStatement(
-                        "val %N = %T(%L)",
+                        "val %N = %L(%L)",
                         childBuilderName,
-                        child.builderType,
+                        context.expression(child.builderType),
                         arguments,
                     )
                     .addStatement("%N.invoke(%N)", blockName, childBuilderName)
@@ -2909,7 +2910,7 @@ class DslProcessor(
         val REQUIRE = MemberName("kotlin", "require")
         val REQUIRE_NOT_NULL = MemberName("kotlin", "requireNotNull")
         val MUTABLE_LIST_OF = MemberName("kotlin.collections", "mutableListOf")
-        val TO_LIST = MemberName("kotlin.collections", "toList")
+        val TO_LIST = MemberName("kotlin.collections", "toList", isExtension = true)
     }
 }
 

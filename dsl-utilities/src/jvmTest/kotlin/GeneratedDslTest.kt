@@ -1,5 +1,6 @@
 package top.ltfan.dslutilities.test
 
+import top.ltfan.dslutilities.test.other.toList
 import kotlin.test.*
 
 class SampleDslTest {
@@ -1092,5 +1093,23 @@ class AliasHandlingTest {
 
         val result = buildShadowedValidator { value = 6 }
         assertEquals(6, result.value)
+    }
+
+    @Test
+    fun `standard library toList stays callable beside a type of the same name`() {
+        val result = buildToListTypeCapture(other = toList()) {
+            items = mutableListOf(1, 2)
+        }
+        assertEquals(listOf(1, 2), result.items)
+    }
+
+    @Test
+    fun `child builder constructors shadowed by members are aliased`() {
+        val result = buildCaptureChildBuilder {
+            child { value = 1 }
+            NamedChildDslBuilder { value = 2 }
+        }
+        assertEquals(1, result.child.value)
+        assertEquals(2, result.NamedChildDslBuilder.value)
     }
 }
