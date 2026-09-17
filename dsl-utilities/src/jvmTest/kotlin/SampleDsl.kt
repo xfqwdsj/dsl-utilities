@@ -1044,19 +1044,41 @@ interface EmptyInitialDsl {
 
 /**
  * Initial values that a generated UTF-8 file cannot carry verbatim:
- * a control character, an unpaired surrogate, and an invisible line
- * separator.
+ * control characters, an unpaired surrogate, invisible separators and
+ * format characters, unassigned and private-use code points, and a string
+ * that contains an unpaired surrogate.
  */
 @DslBuilder
 interface EscapedCharInitialDsl {
-    @DslValue(initial = "\u0008")
-    var control: Char
+    @DslValue(initial = "\u0000")
+    var nul: Char
 
-    @DslValue(initial = "\uD800")
-    var surrogate: Char
+    @DslValue(initial = "\u0008")
+    var backspace: Char
+
+    @DslValue(initial = "\u007f")
+    var delete: Char
 
     @DslValue(initial = "\u2028")
     var lineSeparator: Char
+
+    @DslValue(initial = "\u2029")
+    var paragraphSeparator: Char
+
+    @DslValue(initial = "\ufeff")
+    var format: Char
+
+    @DslValue(initial = "\ue000")
+    var privateUse: Char
+
+    @DslValue(initial = "\u0378")
+    var unassigned: Char
+
+    @DslValue(initial = "\ud800")
+    var surrogate: Char
+
+    @DslValue(initial = "lone \ud800 surrogate")
+    var text: String
 }
 
 /**

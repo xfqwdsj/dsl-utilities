@@ -1136,20 +1136,32 @@ class AliasHandlingTest {
     }
 
     @Test
-    fun `character initial values are escaped in the generated literal`() {
+    fun `escaped initial values survive the generated file`() {
         val builder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "EscapedCharInitialDslBuilder.kt" }
         assertNotNull(builder, "EscapedCharInitialDslBuilder.kt was not generated")
         val text = builder.readText()
-        assertTrue(text.contains("'\\u0008'"), text)
-        assertTrue(text.contains("'\\ud800'"), text)
-        assertTrue(text.contains("'\\u2028'"), text)
+        val escapes = listOf(
+            "'\\u0000'", "'\\u0008'", "'\\u007f'", "'\\u2028'", "'\\u2029'",
+            "'\\ufeff'", "'\\ue000'", "'\\u0378'", "'\\ud800'",
+        )
+        for (escape in escapes) {
+            assertTrue(text.contains(escape), text)
+        }
+        assertTrue(text.contains("\"lone \\ud800 surrogate\""), text)
 
         val result = buildEscapedCharInitial { }
-        assertEquals('\u0008', result.control)
-        assertEquals('\uD800', result.surrogate)
+        assertEquals('\u0000', result.nul)
+        assertEquals('\u0008', result.backspace)
+        assertEquals('\u007f', result.delete)
         assertEquals('\u2028', result.lineSeparator)
+        assertEquals('\u2029', result.paragraphSeparator)
+        assertEquals('\ufeff', result.format)
+        assertEquals('\ue000', result.privateUse)
+        assertEquals('\u0378', result.unassigned)
+        assertEquals('\uD800', result.surrogate)
+        assertEquals("lone \uD800 surrogate", result.text)
     }
 
     @Test
