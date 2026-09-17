@@ -2063,7 +2063,7 @@ class DslProcessor(
 
                     else -> {
                         val rendered = if (isFunction) {
-                            lambdaTypeName(symbol, resolved, shape, annotationsFrom)
+                            lambdaTypeName(symbol, resolved, shape, annotationsFrom) ?: return null
                         } else {
                             classifierTypeName(symbol, resolved, shape, annotationsFrom)
                         }
@@ -2231,7 +2231,7 @@ class DslProcessor(
          * type that carries the receiver and suspend markers dropped by
          * substitution.
          */
-        private fun lambdaTypeName(symbol: KSNode, type: KSType, shape: KSType, annotationsFrom: KSType?): TypeName {
+        private fun lambdaTypeName(symbol: KSNode, type: KSType, shape: KSType, annotationsFrom: KSType?): TypeName? {
             val arguments = type.arguments
             val carried = carriedArguments(annotationsFrom, type).ifEmpty { carriedArguments(shape, type) }
             val isExtension = shape.annotations.any { it.isMarker(EXTENSION_FUNCTION_TYPE) }
@@ -2239,6 +2239,14 @@ class DslProcessor(
                 arguments.firstOrNull()?.type?.resolve()?.let { renderTypeName(symbol, it, carried.getOrNull(0)) }
             } else {
                 null
+            }
+            if (receiver is LambdaTypeName && receiver.annotations.isEmpty()) {
+                // KotlinPoet only parenthesizes an annotated lambda receiver.
+                report(
+                    symbol,
+                    "The type of ${symbolDescription(symbol)} is unsupported: a function type whose receiver is a function type cannot be rendered."
+                )
+                return null
             }
             val valueStart = if (isExtension) 1 else 0
             val valueArguments = if (isExtension) arguments.drop(1) else arguments
