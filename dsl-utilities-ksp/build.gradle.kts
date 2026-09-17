@@ -14,6 +14,8 @@ dependencies {
     implementation(libs.kspApi)
     implementation(libs.kotlinpoet)
     implementation(libs.kotlinpoet.ksp)
+    // Keeps the annotations on the classpath for Dokka KDoc links; the
+    // processor references them only by name through KSP.
     compileOnly(project(":dsl-utilities"))
 }
 
