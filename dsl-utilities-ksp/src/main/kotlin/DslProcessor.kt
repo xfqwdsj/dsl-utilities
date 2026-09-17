@@ -512,10 +512,10 @@ class DslProcessor(
                     if (property.mapper == null) {
                         if (property.validator != null) {
                             addStatement(
-                                "%L(%L.validate($VALUE_PARAMETER)) { %S }",
+                                "%L(%L.validate($VALUE_PARAMETER)) { %L }",
                                 context.member(REQUIRE),
                                 property.validator.code(context),
-                                property.message
+                                literalString(property.message)
                             )
                         }
                         addStatement("%N = $VALUE_PARAMETER", property.nameField())
@@ -523,10 +523,10 @@ class DslProcessor(
                         addStatement("val $STORED_VALUE = %L.toStored($VALUE_PARAMETER)", property.mapper.code(context))
                         if (property.validator != null) {
                             addStatement(
-                                "%L(%L.validate($STORED_VALUE)) { %S }",
+                                "%L(%L.validate($STORED_VALUE)) { %L }",
                                 context.member(REQUIRE),
                                 property.validator.code(context),
-                                property.message
+                                literalString(property.message)
                             )
                         }
                         addStatement("%N = $STORED_VALUE", property.nameField())
@@ -546,11 +546,11 @@ class DslProcessor(
             if (property.validator != null) {
                 builder.addInitializerBlock(
                     CodeBlock.of(
-                        "%L(%L.validate(%N)) { %S }\n",
+                        "%L(%L.validate(%N)) { %L }\n",
                         context.member(REQUIRE),
                         property.validator.code(context),
                         property.nameField(),
-                        property.message,
+                        literalString(property.message),
                     )
                 )
             }
@@ -603,11 +603,11 @@ class DslProcessor(
         for (property in requiredProperties) {
             if (property.validator != null) {
                 buildCode.addStatement(
-                    "%L(%L.validate(%N)) { %S }",
+                    "%L(%L.validate(%N)) { %L }",
                     context.member(REQUIRE),
                     property.validator.code(context),
                     property.name,
-                    property.message,
+                    literalString(property.message),
                 )
             }
         }
@@ -615,10 +615,10 @@ class DslProcessor(
             if (property.validator != null) {
                 buildCode.addStatement("for ($ELEMENT in %N) {", property.nameField())
                 buildCode.addStatement(
-                    "%L(%L.validate($ELEMENT)) { %S }",
+                    "%L(%L.validate($ELEMENT)) { %L }",
                     context.member(REQUIRE),
                     property.validator.code(context),
-                    property.message,
+                    literalString(property.message),
                 )
                 buildCode.addStatement("}")
             }
@@ -2847,7 +2847,8 @@ class DslProcessor(
     /**
      * Returns `true` when [name] is a simple identifier that can name a
      * generated declaration. Names with separators or other characters cannot
-     * be emitted as class or function names.
+     * be emitted as class or function names; hard keywords can, because
+     * KotlinPoet emits them quoted with backticks.
      */
     private fun isSimpleIdentifier(name: String): Boolean =
         NameAllocator(preallocateKeywords = false).newName(name) == name
@@ -3046,11 +3047,51 @@ private val initialFormats = listOf(
     InitialFormat(CHAR, "not a single character") { initial ->
         if (initial.length == 1) CodeBlock.of("'%L'", escapeCharLiteral(initial[0])) else null
     },
-    InitialFormat(STRING, "not a String constant") { CodeBlock.of("%S", it) },
+    InitialFormat(STRING, "not a String constant") { literalString(it) },
 )
 
 /** Renders [text] as a literal expression. */
 private fun literalNumber(text: String): CodeBlock = CodeBlock.of("%L", text)
+
+/**
+ * Renders [value] as a Kotlin string literal. KotlinPoet's `%S` format
+ * cannot carry an unpaired surrogate through the generated UTF-8 file, so
+ * a value that contains one is rendered with explicit escapes instead.
+ */
+private fun literalString(value: String): CodeBlock =
+    if (value.none { it.isHighSurrogate() || it.isLowSurrogate() }) {
+        CodeBlock.of("%S", value)
+    } else {
+        CodeBlock.of("%L", escapedStringLiteral(value))
+    }
+
+/**
+ * Renders [value] as a double-quoted Kotlin string literal, escaping the
+ * characters that cannot travel through the generated file verbatim.
+ */
+private fun escapedStringLiteral(value: String): String = buildString {
+    append('"')
+    for (character in value) {
+        when (character) {
+            '\\' -> append("\\\\")
+            '"' -> append("\\\"")
+            '\n' -> append("\\n")
+            '\r' -> append("\\r")
+            '\t' -> append("\\t")
+            '$' -> append("\\$")
+            else -> if (Character.getType(character) in escapedCharacterTypes) {
+                append(unicodeEscape(character))
+            } else {
+                append(character)
+            }
+        }
+    }
+    append('"')
+}
+
+/** Renders [character] as a `\uXXXX` escape. */
+private fun unicodeEscape(character: Char): String =
+    "\\u${character.code.toString(16).padStart(4, '0')}"
 
 /** Renders a floating point value so that it keeps its floating point type. */
 private fun formatFloatingPoint(value: Double): String {
@@ -3137,7 +3178,7 @@ private fun escapeCharLiteral(character: Char): String = when (character) {
     '\t' -> "\\t"
     '$' -> "\\$"
     else -> if (Character.getType(character) in escapedCharacterTypes) {
-        "\\u${character.code.toString(16).padStart(4, '0')}"
+        unicodeEscape(character)
     } else {
         character.toString()
     }
