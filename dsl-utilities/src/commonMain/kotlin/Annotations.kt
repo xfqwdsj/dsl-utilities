@@ -71,7 +71,8 @@ public annotation class DslBuilder(
  *   or a constant that the parsed type rejects; a [mapper] receives the
  *   parsed value unchanged, so a constant the mapper cannot handle fails
  *   when the builder is created. Trailing newlines of a [String] value are
- *   not preserved when the literal is emitted.
+ *   not preserved when the literal is emitted, unless the value contains an
+ *   unpaired surrogate, which is rendered verbatim.
  * @param validator A [DslValidator] object or class. The generated setter
  *   calls `require` with this validator before storing the value. When
  *   unset, the property accepts every value.

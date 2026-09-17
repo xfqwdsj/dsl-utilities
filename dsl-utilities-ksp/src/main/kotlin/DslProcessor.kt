@@ -2315,8 +2315,11 @@ class DslProcessor(
 
         /**
          * Returns the annotation spec of this annotation when generated code
-         * repeats it; compiler markers and annotations that are expressed through
-         * the type syntax read as absent.
+         * repeats it; compiler markers and annotations that are expressed
+         * through the type syntax read as absent. Arguments are rendered by
+         * kotlinpoet-ksp, so a `String` or `Char` argument that contains an
+         * unpaired surrogate is emitted as `?`; the processor does not rebuild
+         * those arguments.
          */
         private fun KSAnnotation.toRenderableSpec(ignoreExtensionMarker: Boolean): AnnotationSpec? {
             if (ignoreExtensionMarker && isMarker(EXTENSION_FUNCTION_TYPE)) return null
@@ -2551,7 +2554,8 @@ class DslProcessor(
          * Renders a compile-time constant written in string form as a Kotlin
          * literal expression of the property type. String constants are rendered
          * by KotlinPoet, which normalizes their line endings and trims a trailing
-         * newline in property initializers.
+         * newline in property initializers; a constant that contains a surrogate
+         * code unit cannot go through KotlinPoet and is rendered verbatim.
          */
         fun literal(property: KSPropertyDeclaration, propertyName: String, initial: String, type: KSType): CodeBlock? {
             val literalClass = expandAliases(type).makeNotNullable().declaration
@@ -3069,8 +3073,9 @@ private fun literalNumber(text: String): CodeBlock = CodeBlock.of("%L", text)
 
 /**
  * Renders [value] as a Kotlin string literal. KotlinPoet's `%S` format
- * cannot carry an unpaired surrogate through the generated UTF-8 file, so
- * a value that contains one is rendered with explicit escapes instead.
+ * cannot carry a surrogate code unit through the generated UTF-8 file, so
+ * a value that contains one is rendered with explicit escapes instead, which
+ * keeps the value verbatim.
  */
 private fun literalString(value: String): CodeBlock =
     if (value.none { it.isHighSurrogate() || it.isLowSurrogate() }) {
