@@ -1146,4 +1146,16 @@ class AliasHandlingTest {
         val result = buildMarkerNameCollision(callback = { })
         assertNotNull(result.callback)
     }
+
+    @Test
+    fun `a user annotation named like a parameter marker is not a marker`() {
+        val builder = File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "ParameterNameCollisionDslBuilder.kt" }
+        assertNotNull(builder, "ParameterNameCollisionDslBuilder.kt was not generated")
+        assertFalse(builder.readText().contains("renamed: String"), builder.readText())
+
+        val result = buildParameterNameCollision(callback = { })
+        assertNotNull(result.callback)
+    }
 }

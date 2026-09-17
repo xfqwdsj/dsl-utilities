@@ -1015,6 +1015,14 @@ interface MarkerNameCollisionDsl {
     val callback: @ExtensionFunctionType (String) -> Unit
 }
 
+@Target(AnnotationTarget.TYPE)
+annotation class ParameterName(val name: String)
+
+@DslBuilder
+interface ParameterNameCollisionDsl {
+    val callback: (@ParameterName("renamed") String) -> Unit
+}
+
 @DslBuilder
 interface EmptyInitialDsl {
     @DslValue(initial = "")
