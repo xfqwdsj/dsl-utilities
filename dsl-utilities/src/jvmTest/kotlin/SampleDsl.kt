@@ -1043,6 +1043,23 @@ interface EmptyInitialDsl {
 }
 
 /**
+ * Initial values that a generated UTF-8 file cannot carry verbatim:
+ * a control character, an unpaired surrogate, and an invisible line
+ * separator.
+ */
+@DslBuilder
+interface EscapedCharInitialDsl {
+    @DslValue(initial = "\u0008")
+    var control: Char
+
+    @DslValue(initial = "\uD800")
+    var surrogate: Char
+
+    @DslValue(initial = "\u2028")
+    var lineSeparator: Char
+}
+
+/**
  * Shadows the standard library function of the same name for declarations
  * of this package, so generated code has to bind the standard library
  * function through its explicit import. Tests in this package must import

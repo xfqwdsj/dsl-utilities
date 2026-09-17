@@ -1136,6 +1136,23 @@ class AliasHandlingTest {
     }
 
     @Test
+    fun `character initial values are escaped in the generated literal`() {
+        val builder = File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "EscapedCharInitialDslBuilder.kt" }
+        assertNotNull(builder, "EscapedCharInitialDslBuilder.kt was not generated")
+        val text = builder.readText()
+        assertTrue(text.contains("'\\u0008'"), text)
+        assertTrue(text.contains("'\\ud800'"), text)
+        assertTrue(text.contains("'\\u2028'"), text)
+
+        val result = buildEscapedCharInitial { }
+        assertEquals('\u0008', result.control)
+        assertEquals('\uD800', result.surrogate)
+        assertEquals('\u2028', result.lineSeparator)
+    }
+
+    @Test
     fun `a user annotation named like a compiler marker is not a marker`() {
         val builder = File("build/generated/ksp")
             .walkTopDown()
@@ -1188,5 +1205,18 @@ class AliasHandlingTest {
 
         val result = buildNullableNestedFunctionReceiver(callback = { })
         assertNotNull(result.callback)
+    }
+
+    @Test
+    fun `aliases with nullable targets are not marked nullable again`() {
+        val builder = File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "AliasedStarListDslBuilder.kt" }
+        assertNotNull(builder, "AliasedStarListDslBuilder.kt was not generated")
+        assertTrue(builder.readText().contains("StarListAlias<*>"), builder.readText())
+        assertFalse(builder.readText().contains("StarListAlias<*>?"), builder.readText())
+
+        val result = buildAliasedStarList { values = listOf(1) }
+        assertEquals(listOf(1), result.values)
     }
 }
