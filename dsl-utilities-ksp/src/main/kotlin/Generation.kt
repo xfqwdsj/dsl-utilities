@@ -364,11 +364,17 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         }
         .build()
 
-    val file = codeGenerator.createNewFile(
-        Dependencies(aggregating = true, *spec.containingFile?.let { arrayOf(it) } ?: emptyArray()),
-        packageName,
-        names.builderName,
-    )
+    val file = try {
+        codeGenerator.createNewFile(
+            Dependencies(aggregating = true, *spec.containingFile?.let { arrayOf(it) } ?: emptyArray()),
+            packageName,
+            names.builderName,
+        )
+    } catch (_: FileAlreadyExistsException) {
+        val qualifiedName = if (packageName.isEmpty()) names.builderName else "$packageName.${names.builderName}"
+        checker.report(spec, "Generated type $qualifiedName is also produced by another declaration.")
+        return handled(checker)
+    }
     OutputStreamWriter(file, StandardCharsets.UTF_8).use { writer ->
         writer.write(fileSpec.toString())
     }
