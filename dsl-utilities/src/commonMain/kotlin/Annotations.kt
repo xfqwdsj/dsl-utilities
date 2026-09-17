@@ -66,7 +66,12 @@ public annotation class DslBuilder(
  *   string form, parsed at compile time according to the property type.
  *   Supported types are [Byte], [Short], [Int], [Long], [UByte], [UShort],
  *   [UInt], [ULong], [Float], [Double], [Boolean], [Char], and [String].
- *   An empty string means the property has no initial value.
+ *   When omitted, the stored value is `null`, which a non-nullable
+ *   property rejects. An explicit empty string is an empty [String] value,
+ *   or a constant that the parsed type rejects; a [mapper] receives the
+ *   parsed value unchanged, so a constant the mapper cannot handle fails
+ *   when the builder is created. A trailing newline of a [String] value is
+ *   not preserved when the literal is emitted.
  * @param validator A [DslValidator] object or class. The generated setter
  *   calls `require` with this validator before storing the value. When
  *   unset, the property accepts every value.

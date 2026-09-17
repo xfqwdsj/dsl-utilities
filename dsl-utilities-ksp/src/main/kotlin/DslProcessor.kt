@@ -5,6 +5,7 @@ import com.google.devtools.ksp.getDeclaredProperties
 import com.google.devtools.ksp.getAllSuperTypes
 import com.google.devtools.ksp.getVisibility
 import com.google.devtools.ksp.isAbstract
+import com.google.devtools.ksp.isDefault
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 import com.google.devtools.ksp.validate
@@ -865,7 +866,7 @@ class DslProcessor(
             return null
         }
         val mapperType = annotation?.type("mapper")
-        if (mapperType != null && !mapperType.declaration.isClass(UNIT)) {
+        if (mapperType != null && !mapperType.isUnit()) {
             checker.report(property, "@DslValue.mapper applies to var properties; $name is a val.")
             return null
         }
@@ -1066,7 +1067,7 @@ class DslProcessor(
             checker.reportUnresolved(function, "The return type of @DslChild function $name is not resolvable yet.")
             return null
         }
-        if (functionReturnType?.declaration?.isClass(UNIT) != true) {
+        if (functionReturnType?.isUnit() != true) {
             checker.report(function, "@DslChild function $name must return Unit.")
             return null
         }
@@ -1193,7 +1194,7 @@ class DslProcessor(
         }
         val blockReturnType = arguments.last().type?.resolve()?.let { checker.expandAliases(it) }
         if (blockReturnType == null ||
-            !blockReturnType.declaration.isClass(UNIT) ||
+            !blockReturnType.isUnit() ||
             blockReturnType.isMarkedNullable
         ) {
             checker.report(
@@ -1319,7 +1320,7 @@ class DslProcessor(
             )
         }
         return ChildSpec(
-            functionName = decapitalize(specName.removeSuffix("Dsl").takeIf { it.isNotEmpty() } ?: specName),
+            functionName = decapitalize(derivedBaseName(specName)),
             specTypeName = declaration.toClassName(),
             builderType = names.builderType(packageName),
             resultType = names.resultType(packageName),
@@ -1346,7 +1347,7 @@ class DslProcessor(
         val specName = spec.simpleName.asString()
         val rawType = annotation?.type("supertype") ?: return null
         val type = checker.expandAliases(rawType)
-        if (type.declaration.isClass(UNIT)) return null
+        if (type.isUnit()) return null
         if (type.isError) {
             checker.reportUnresolved(spec, "@DslBuilder.supertype of $specName is not resolvable yet.")
             return null
@@ -1818,7 +1819,8 @@ class DslProcessor(
         /**
          * The number of diagnostics collected so far. Callers capture it before
          * a step and compare afterwards, so a failure of one property does not
-         * suppress the diagnostics of the next.
+         * suppress the diagnostics of the next. Within one property the first
+         * failure still stops its remaining checks to avoid cascading errors.
          */
         val diagnosticCount: Int get() = pending.size
 
@@ -2590,9 +2592,6 @@ class DslProcessor(
             return if (rendered.any { it == '.' || it == 'e' || it == 'E' }) rendered else "$rendered.0"
         }
 
-        private fun KSType.isUnit(): Boolean =
-            declaration.isClass(UNIT)
-
         /**
          * Searches the supertype hierarchy of [declaration] for [qualifiedName]
          * and returns the type arguments of the match as seen from the perspective
@@ -2724,7 +2723,11 @@ class DslProcessor(
         inner class LocalScope {
             private val allocator = NameAllocator()
 
-            /** Reserves a name that the generated function body declares. */
+            /**
+             * Reserves a name that the generated function body declares as a
+             * user-written parameter. The name is kept as written; the scope allocator
+             * only learns it, so generated locals avoid it.
+             */
             fun register(name: String) {
                 allocator.newName(name)
                 registerAllocated(name)
@@ -2741,13 +2744,21 @@ class DslProcessor(
         private fun aliasOfType(type: ClassName): String =
             aliasNames.getOrPut(type.canonicalName) {
                 aliasAllocator.newName("${type.simpleName}Ref")
-                    .also { aliases += AliasRequest.Type(type, it) }
+                    .also {
+                        aliases += AliasRequest.Type(type, it)
+                        // The alias is a name of this file, so a reference that
+                        // reuses it receives its own alias.
+                        names += it
+                    }
             }
 
         private fun aliasOfMember(member: MemberName): String =
             aliasNames.getOrPut(member.canonicalName) {
                 aliasAllocator.newName("stdlib${member.simpleName.replaceFirstChar { it.uppercase() }}")
-                    .also { aliases += AliasRequest.Member(member, it) }
+                    .also {
+                        aliases += AliasRequest.Member(member, it)
+                        names += it
+                    }
             }
 
         private sealed interface AliasRequest {
@@ -2886,13 +2897,10 @@ class DslProcessor(
 
         companion object {
             fun of(specName: String, annotation: KSAnnotation?): Names {
-                val defaultResult = if (specName.endsWith("Dsl")) {
-                    specName.removeSuffix("Dsl").takeIf { it.isNotEmpty() } ?: "${specName}Result"
-                } else {
-                    "${specName}Result"
-                }
+                val baseName = derivedBaseName(specName)
+                val defaultResult = if (baseName == specName) "${specName}Result" else baseName
                 val defaultBuilder = "${specName}Builder"
-                val defaultFunction = "build${specName.removeSuffix("Dsl").takeIf { it.isNotEmpty() } ?: specName}"
+                val defaultFunction = "build$baseName"
                 val resultName = annotation?.string("resultName").takeUnless { it.isNullOrEmpty() } ?: defaultResult
                 val builderName = annotation?.string("builderName").takeUnless { it.isNullOrEmpty() } ?: defaultBuilder
                 val generateFunction = annotation?.boolean("generateFunction") ?: true
@@ -2950,7 +2958,12 @@ class DslProcessor(
         const val BUILDER_LOCAL = "builder"
         const val CHILD_BUILDER_LOCAL = "childBuilder"
 
-        /** The fixed names that generated bodies declare, registered per file. */
+        /**
+         * The names that every generated body and the builder declare and that
+         * the templates emit as fixed text, registered per file up front. The
+         * block, builder and child builder locals are allocated per function scope
+         * instead, because their names depend on that function's parameter names.
+         */
         val GENERATED_NAMES = setOf(VALUE_PARAMETER, STORED_VALUE, SNAPSHOT, ELEMENT, BUILD_FUNCTION)
 
         val REQUIRE = MemberName("kotlin", "require")
@@ -2966,12 +2979,20 @@ private fun KSAnnotated.annotation(qualifiedName: String): KSAnnotation? =
     }
 
 /**
+ * The name of a DslBuilder interface without its `Dsl` suffix; the name
+ * itself when it has no suffix or the suffix is the whole name. The
+ * result, builder and function names derive from this base.
+ */
+private fun derivedBaseName(specName: String): String =
+    specName.removeSuffix("Dsl").takeIf { it.isNotEmpty() } ?: specName
+
+/**
  * Returns the string argument [name] when the annotation provides it
  * explicitly; an argument that fell back to its default reads as absent.
  */
 private fun KSAnnotation.providedString(name: String): String? {
     val argument = arguments.firstOrNull { it.name?.asString() == name } ?: return null
-    return if (argument.origin == Origin.SYNTHETIC) null else argument.value as? String
+    return if (argument.isDefault()) null else argument.value as? String
 }
 
 /** Returns whether this declaration has the qualified name of [className]. */
@@ -2979,13 +3000,24 @@ private fun KSDeclaration.isClass(className: ClassName): Boolean =
     qualifiedName?.asString() == className.canonicalName
 
 /**
- * Returns whether this annotation is the compiler marker [className]. A
- * marker like `kotlin.ExtensionFunctionType` is synthetic: KSP exposes it
- * with a short name but without a resolvable declaration, so the short
- * name derived from the constant is the only available signal.
+ * Returns whether this annotation is the compiler marker [className]. An
+ * annotation that resolves to a declaration is matched by its qualified
+ * name, so a user annotation that reuses the marker's short name is
+ * not mistaken for it. A marker like `kotlin.ExtensionFunctionType`
+ * is synthetic: KSP exposes it without a resolvable declaration,
+ * so the short name derived from the constant is the fallback.
  */
-private fun KSAnnotation.isMarker(className: ClassName): Boolean =
-    shortName.asString() == className.simpleName
+private fun KSAnnotation.isMarker(className: ClassName): Boolean {
+    val qualifiedName = annotationType.resolve().declaration.qualifiedName?.asString()
+    return if (qualifiedName != null) {
+        qualifiedName == className.canonicalName
+    } else {
+        shortName.asString() == className.simpleName
+    }
+}
+
+/** Returns whether this type is `kotlin.Unit`. */
+private fun KSType.isUnit(): Boolean = declaration.isClass(UNIT)
 
 private fun KSAnnotation.string(name: String): String? =
     arguments.firstOrNull { it.name?.asString() == name }?.value as? String
