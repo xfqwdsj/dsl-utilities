@@ -1121,8 +1121,7 @@ class DslProcessor(
         // A star projection that the alias target uses cannot be rendered; a
         // kept alias always carries one somewhere in its chain. Report the
         // projection itself instead of the shape error it would otherwise hit.
-        val hasUnboundProjection =
-            blockType.declaration is KSTypeAlias || arguments.any { it.type == null }
+        val hasUnboundProjection = blockType.hasUnboundProjection()
         if (hasUnboundProjection && (blockShape.isFunctionType || isSuspend)) {
             checker.report(
                 function,
@@ -1768,7 +1767,7 @@ class DslProcessor(
                         return
                     }
                     val superDeclaration = resolved.declaration as? KSClassDeclaration ?: continue
-                    if (resolved.arguments.any { it.type == null }) {
+                    if (resolved.hasUnboundProjection()) {
                         val key =
                             "${declaration.qualifiedName?.asString()}:${superDeclaration.qualifiedName?.asString()}"
                         if (reportedStarProjections.add(key)) {
@@ -1889,11 +1888,10 @@ class DslProcessor(
 
         /**
          * The single walk over the alias chain of a type: the raw alias targets
-         * from the outermost alias inward, the substituted expansion (unless the
-         * walk is shape-only), whether an unbound projection keeps the outermost
-         * alias, and the nullability of the chain. Expansion, shape checks and
-         * annotation recovery all read this chain, so its structure has one
-         * implementation.
+         * from the outermost alias inward, the substituted expansion, whether an
+         * unbound projection keeps the outermost alias, and the nullability of the
+         * chain. Expansion, shape checks and annotation recovery all read this
+         * chain, so its structure has one implementation.
          */
         private class AliasChain(
             val links: List<KSType>,
@@ -1902,7 +1900,7 @@ class DslProcessor(
             val nullable: Boolean,
         )
 
-        private fun aliasChain(type: KSType, substitute: Boolean = true): AliasChain {
+        private fun aliasChain(type: KSType): AliasChain {
             val links = mutableListOf<KSType>()
             var current = type
             val visited = mutableSetOf<String>()
@@ -1925,7 +1923,7 @@ class DslProcessor(
                     .toMap()
                 val target = alias.type.resolve()
                 links += target
-                current = if (substitute) substituteType(target, environment) else target
+                current = substituteType(target, environment)
             }
             val keepsAlias = unboundParameters.isNotEmpty() && containsParameter(current, unboundParameters)
             val nullable = type.isMarkedNullable || links.any { it.isMarkedNullable }
@@ -1949,7 +1947,7 @@ class DslProcessor(
          * shape checks read the receiver and suspend markers from this type.
          */
         fun aliasTarget(type: KSType): KSType {
-            val chain = aliasChain(type, substitute = false)
+            val chain = aliasChain(type)
             val target = chain.links.lastOrNull() ?: type
             return if (chain.nullable) target.makeNullable() else target
         }
@@ -2049,7 +2047,7 @@ class DslProcessor(
                 // A kept alias is the result of an unbound star projection
                 // anywhere in the chain, so it cannot be rendered as a function
                 // type even when its own arguments carry no star.
-                val hasUnboundProjection = keptAlias || resolved.arguments.any { it.type == null }
+                val hasUnboundProjection = resolved.hasUnboundProjection()
                 when {
                     isFunction && hasUnboundProjection -> {
                         report(
@@ -2084,7 +2082,7 @@ class DslProcessor(
          * annotation that expansion cannot carry over.
          */
         private fun hasUnrecoverableAliasAnnotations(type: KSType): Boolean =
-            aliasChain(type, substitute = false).links.any { hasAnnotatedAliasLink(it) }
+            aliasChain(type).links.any { hasAnnotatedAliasLink(it) }
 
         private fun hasAnnotatedAliasLink(type: KSType): Boolean {
             val alias = type.declaration as? KSTypeAlias
@@ -3041,6 +3039,14 @@ private fun KSAnnotation.providedString(name: String): String? {
 /** Returns whether this declaration has the qualified name of [className]. */
 private fun KSDeclaration.isClass(className: ClassName): Boolean =
     qualifiedName?.asString() == className.canonicalName
+
+/**
+ * Returns whether this type cannot be rendered as a regular type
+ * reference: it is a kept alias (an unbound star projection
+ * kept it) or one of its arguments is a star projection.
+ */
+private fun KSType.hasUnboundProjection(): Boolean =
+    declaration is KSTypeAlias || arguments.any { it.type == null }
 
 /**
  * Returns whether this annotation is the compiler marker [className]. An
