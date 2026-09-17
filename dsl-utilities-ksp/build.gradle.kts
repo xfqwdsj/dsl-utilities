@@ -23,6 +23,9 @@ java {
 }
 
 kotlin {
+    // The only intended public surface is the KSP service-loader entry point,
+    // which consumers use as a binary dependency through KSP; explicit API
+    // mode would not add any guarantee, so it is deliberately not applied.
     compilerOptions {
         jvmTarget = JvmTarget.JVM_17
     }
