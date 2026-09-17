@@ -386,7 +386,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
  * handled in this round. A spec whose failures are all unresolved
  * types stays unreported so the caller can defer it to a later round.
  */
-internal fun handled(checker: Checker): Boolean {
+private fun handled(checker: Checker): Boolean {
     if (checker.onlyUnresolved()) return false
     checker.flush()
     return true

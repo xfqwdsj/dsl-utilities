@@ -278,7 +278,8 @@ internal fun resultType(
 
 /**
  * Builds the element functions of the declared list children together with
- * the property shorthands of children without required properties.
+ * the property shorthands of children that declare no required properties
+ * and no `@DslChild` functions.
  */
 internal fun elementFunctions(
     specTypeName: ClassName,
@@ -384,12 +385,11 @@ internal fun buildFunction(
 }
 
 /**
- * Builds the parameter of a required property for the generated
- * inline entry points. A function-typed parameter cannot be passed
- * to the non-inline builder call from an inline function, so it is
- * `noinline`; a nullable function type requires that modifier as well.
+ * Builds the parameter of a required property for the generated inline
+ * entry points. A function-typed parameter cannot be passed to the
+ * non-inline builder call from an inline function, so it is `noinline`.
  */
-internal fun requiredParameter(property: RequiredProperty): ParameterSpec =
+private fun requiredParameter(property: RequiredProperty): ParameterSpec =
     ParameterSpec.builder(property.name, property.typeName)
         .apply {
             if (property.type.isFunctionType || property.type.isSuspendFunctionType) {
@@ -402,13 +402,11 @@ internal fun requiredParameter(property: RequiredProperty): ParameterSpec =
  * Builds escaped `name = name` constructor arguments for required
  * properties.
  */
-internal fun requiredArguments(properties: List<RequiredProperty>): CodeBlock =
+private fun requiredArguments(properties: List<RequiredProperty>): CodeBlock =
     properties.map { CodeBlock.of("%N = %N", it.name, it.name) }.joinToCode(", ")
 
-internal fun ChildScope.nameField(): String = fieldName
-
 /**
- * Copies [TypeName] through its base declaration, keeping defaults for the
- * other arguments.
+ * Returns a copy of this type with the nullable marker set; every other
+ * property is preserved.
  */
 internal fun TypeName.asNullable(): TypeName = copy(nullable = true)

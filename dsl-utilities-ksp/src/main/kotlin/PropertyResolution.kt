@@ -10,6 +10,8 @@ internal fun ValueProperty.nameField(): String = fieldName
 
 internal fun ListProperty.nameField(): String = fieldName
 
+internal fun ChildScope.nameField(): String = fieldName
+
 /**
  * Returns whether [declaration] or one of its supertypes declares an
  * abstract property named [name].
@@ -198,7 +200,7 @@ internal fun DslProcessor.listProperty(
         }
         children += child
     }
-    if (!checker.valid) return null
+    if (checker.diagnosticCount != diagnostics) return null
     val functionNames = children.map { it.functionName }
     if (functionNames.size != functionNames.toSet().size) {
         checker.report(property, "Two or more children of @DslList property $name produce the same function name.")
