@@ -2240,8 +2240,9 @@ class DslProcessor(
             } else {
                 null
             }
-            if (receiver is LambdaTypeName && receiver.annotations.isEmpty()) {
-                // KotlinPoet only parenthesizes an annotated lambda receiver.
+            if (receiver is LambdaTypeName && !receiver.isAnnotated && !receiver.isNullable) {
+                // KotlinPoet only parenthesizes an annotated or nullable
+                // lambda receiver.
                 report(
                     symbol,
                     "The type of ${symbolDescription(symbol)} is unsupported: a function type whose receiver is a function type cannot be rendered."
