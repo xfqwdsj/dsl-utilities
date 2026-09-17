@@ -1882,8 +1882,28 @@ class DslProcessor(
          * alias.
          */
         fun expandAliases(type: KSType): KSType {
+            val chain = aliasChain(type)
+            val nullable = type.isMarkedNullable || chain.links.any { it.isMarkedNullable }
+            val result = if (chain.keepsAlias) type else chain.resolved
+            return if (nullable) result.makeNullable() else result
+        }
+
+        /**
+         * The single walk over the alias chain of a type: the raw alias targets
+         * from the outermost alias inward, the fully substituted expansion, and
+         * whether an unbound projection keeps the outermost alias. Expansion,
+         * shape checks and annotation recovery all read this chain, so its
+         * structure has one implementation.
+         */
+        private class AliasChain(
+            val links: List<KSType>,
+            val resolved: KSType,
+            val keepsAlias: Boolean,
+        )
+
+        private fun aliasChain(type: KSType): AliasChain {
+            val links = mutableListOf<KSType>()
             var current = type
-            var nullable = type.isMarkedNullable
             val visited = mutableSetOf<String>()
             val unboundParameters = mutableSetOf<KSTypeParameter>()
             while (!current.isError) {
@@ -1903,14 +1923,11 @@ class DslProcessor(
                     }
                     .toMap()
                 val target = alias.type.resolve()
-                nullable = nullable || target.isMarkedNullable
+                links += target
                 current = substituteType(target, environment)
             }
-            if (unboundParameters.isNotEmpty() && containsParameter(current, unboundParameters)) {
-                nullable = nullable || aliasTarget(type).isMarkedNullable
-                return if (nullable) type.makeNullable() else type
-            }
-            return if (nullable) current.makeNullable() else current
+            val keepsAlias = unboundParameters.isNotEmpty() && containsParameter(current, unboundParameters)
+            return AliasChain(links, current, keepsAlias)
         }
 
         /**
@@ -1930,18 +1947,10 @@ class DslProcessor(
          * shape checks read the receiver and suspend markers from this type.
          */
         fun aliasTarget(type: KSType): KSType {
-            var current = type
-            var nullable = type.isMarkedNullable
-            val visited = mutableSetOf<String>()
-            while (!current.isError) {
-                val alias = current.declaration as? KSTypeAlias ?: break
-                val aliasName = alias.qualifiedName?.asString() ?: break
-                if (!visited.add(aliasName)) break
-                val target = alias.type.resolve()
-                nullable = nullable || target.isMarkedNullable
-                current = target
-            }
-            return if (nullable) current.makeNullable() else current
+            val chain = aliasChain(type)
+            val nullable = type.isMarkedNullable || chain.links.any { it.isMarkedNullable }
+            val target = chain.links.lastOrNull() ?: type
+            return if (nullable) target.makeNullable() else target
         }
 
         /** Returns the immutable list type generated for a list result property. */
@@ -2073,18 +2082,8 @@ class DslProcessor(
          * Returns `true` when a link of the alias chain carries a type-use
          * annotation that expansion cannot carry over.
          */
-        private fun hasUnrecoverableAliasAnnotations(type: KSType): Boolean {
-            var current = type
-            val visited = mutableSetOf<String>()
-            while (true) {
-                val alias = current.declaration as? KSTypeAlias ?: return false
-                val name = alias.qualifiedName?.asString() ?: return false
-                if (!visited.add(name)) return false
-                val target = alias.type.resolve()
-                if (hasAnnotatedAliasLink(target)) return true
-                current = target
-            }
-        }
+        private fun hasUnrecoverableAliasAnnotations(type: KSType): Boolean =
+            aliasChain(type).links.any { hasAnnotatedAliasLink(it) }
 
         private fun hasAnnotatedAliasLink(type: KSType): Boolean {
             val alias = type.declaration as? KSTypeAlias
@@ -2268,29 +2267,28 @@ class DslProcessor(
             types: List<KSType>,
             ignoreExtensionMarker: Boolean,
         ): TypeName {
-            val counts = mutableMapOf<String, Int>()
-            val order = mutableListOf<String>()
-            val specs = mutableMapOf<String, AnnotationSpec>()
-            for (type in types) {
-                val localCounts = mutableMapOf<String, Int>()
-                for (annotation in type.annotations) {
-                    if (ignoreExtensionMarker && annotation.isMarker(EXTENSION_FUNCTION_TYPE)) continue
-                    val qualifiedName = annotation.annotationType.resolve().declaration.qualifiedName?.asString()
-                    if (qualifiedName == null ||
-                        qualifiedName in IGNORED_ANNOTATIONS ||
-                        qualifiedName.startsWith(KOTLIN_INTERNAL_PREFIX)
-                    ) {
-                        continue
-                    }
-                    val spec = annotation.toAnnotationSpec()
-                    val key = spec.toString()
-                    if (specs.putIfAbsent(key, spec) == null) order += key
-                    localCounts[key] = (localCounts[key] ?: 0) + 1
-                }
-                for ((key, count) in localCounts) counts[key] = maxOf(counts[key] ?: 0, count)
+            val sources = types.map { type ->
+                type.annotations.mapNotNull { it.toRenderableSpec(ignoreExtensionMarker) }.toList()
             }
-            val annotations = order.flatMap { key -> List(counts.getValue(key)) { specs.getValue(key) } }
-            return if (annotations.isEmpty()) this else annotated(annotations)
+            val merged = mergeAnnotations(sources)
+            return if (merged.isEmpty()) this else annotated(merged)
+        }
+
+        /**
+         * Returns the annotation spec of this annotation when generated code
+         * repeats it; compiler markers and annotations that are expressed through
+         * the type syntax read as absent.
+         */
+        private fun KSAnnotation.toRenderableSpec(ignoreExtensionMarker: Boolean): AnnotationSpec? {
+            if (ignoreExtensionMarker && isMarker(EXTENSION_FUNCTION_TYPE)) return null
+            val qualifiedName = annotationType.resolve().declaration.qualifiedName?.asString()
+            if (qualifiedName == null ||
+                qualifiedName in IGNORED_ANNOTATIONS ||
+                qualifiedName.startsWith(KOTLIN_INTERNAL_PREFIX)
+            ) {
+                return null
+            }
+            return toAnnotationSpec()
         }
 
         /**
@@ -2985,6 +2983,29 @@ private fun KSAnnotated.annotation(qualifiedName: String): KSAnnotation? =
  */
 private fun derivedBaseName(specName: String): String =
     specName.removeSuffix("Dsl").takeIf { it.isNotEmpty() } ?: specName
+
+/**
+ * Merges the repeated annotations of [sources] into the specs to emit.
+ * Each source contributes its own occurrence count; the highest count
+ * of any single source wins and the specs keep the order of their first
+ * appearance, so repeated annotations of one source stay repeated while
+ * overlapping sources do not duplicate them.
+ */
+private fun mergeAnnotations(sources: List<List<AnnotationSpec>>): List<AnnotationSpec> {
+    val counts = mutableMapOf<String, Int>()
+    val order = mutableListOf<String>()
+    val specs = mutableMapOf<String, AnnotationSpec>()
+    for (source in sources) {
+        val localCounts = mutableMapOf<String, Int>()
+        for (spec in source) {
+            val key = spec.toString()
+            if (specs.putIfAbsent(key, spec) == null) order += key
+            localCounts[key] = (localCounts[key] ?: 0) + 1
+        }
+        for ((key, count) in localCounts) counts[key] = maxOf(counts[key] ?: 0, count)
+    }
+    return order.flatMap { key -> List(counts.getValue(key)) { specs.getValue(key) } }
+}
 
 /**
  * Returns the string argument [name] when the annotation provides it
