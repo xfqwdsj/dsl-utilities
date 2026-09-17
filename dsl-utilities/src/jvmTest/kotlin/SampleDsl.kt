@@ -1024,6 +1024,11 @@ interface ParameterNameCollisionDsl {
 }
 
 @DslBuilder
+interface NestedFunctionReceiverDsl {
+    val callback: (@MaxBytes(93) PlainChildDsl.() -> Unit).() -> Unit
+}
+
+@DslBuilder
 interface EmptyInitialDsl {
     @DslValue(initial = "")
     var text: String

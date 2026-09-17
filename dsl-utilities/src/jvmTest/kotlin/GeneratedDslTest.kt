@@ -1158,4 +1158,20 @@ class AliasHandlingTest {
         val result = buildParameterNameCollision(callback = { })
         assertNotNull(result.callback)
     }
+
+    @Test
+    fun `annotated nested function receivers keep their parentheses`() {
+        val builder = File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "NestedFunctionReceiverDslBuilder.kt" }
+        assertNotNull(builder, "NestedFunctionReceiverDslBuilder.kt was not generated")
+        assertTrue(
+            builder.readText()
+                .contains("(@MaxBytes(atMost = 93.toByte()) PlainChildDsl.() -> Unit).() -> Unit"),
+            builder.readText(),
+        )
+
+        val result = buildNestedFunctionReceiver(callback = { })
+        assertNotNull(result.callback)
+    }
 }
