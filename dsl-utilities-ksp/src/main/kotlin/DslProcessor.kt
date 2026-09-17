@@ -3032,7 +3032,7 @@ private val initialFormats = listOf(
     },
     InitialFormat(FLOAT, "not a finite Float constant") { initial ->
         initial.toFloatOrNull()?.takeIf(Float::isFinite)
-            ?.let { literalNumber("${formatFloatingPoint(it.toDouble())}f") }
+            ?.let { literalNumber("${it}f") }
     },
     InitialFormat(DOUBLE, "not a finite Double constant") { initial ->
         initial.toDoubleOrNull()?.takeIf(Double::isFinite)
