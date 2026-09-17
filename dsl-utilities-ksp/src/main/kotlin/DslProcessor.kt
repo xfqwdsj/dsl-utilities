@@ -1883,25 +1883,26 @@ class DslProcessor(
          */
         fun expandAliases(type: KSType): KSType {
             val chain = aliasChain(type)
-            val nullable = type.isMarkedNullable || chain.links.any { it.isMarkedNullable }
             val result = if (chain.keepsAlias) type else chain.resolved
-            return if (nullable) result.makeNullable() else result
+            return if (chain.nullable) result.makeNullable() else result
         }
 
         /**
          * The single walk over the alias chain of a type: the raw alias targets
-         * from the outermost alias inward, the fully substituted expansion, and
-         * whether an unbound projection keeps the outermost alias. Expansion,
-         * shape checks and annotation recovery all read this chain, so its
-         * structure has one implementation.
+         * from the outermost alias inward, the substituted expansion (unless the
+         * walk is shape-only), whether an unbound projection keeps the outermost
+         * alias, and the nullability of the chain. Expansion, shape checks and
+         * annotation recovery all read this chain, so its structure has one
+         * implementation.
          */
         private class AliasChain(
             val links: List<KSType>,
             val resolved: KSType,
             val keepsAlias: Boolean,
+            val nullable: Boolean,
         )
 
-        private fun aliasChain(type: KSType): AliasChain {
+        private fun aliasChain(type: KSType, substitute: Boolean = true): AliasChain {
             val links = mutableListOf<KSType>()
             var current = type
             val visited = mutableSetOf<String>()
@@ -1924,10 +1925,11 @@ class DslProcessor(
                     .toMap()
                 val target = alias.type.resolve()
                 links += target
-                current = substituteType(target, environment)
+                current = if (substitute) substituteType(target, environment) else target
             }
             val keepsAlias = unboundParameters.isNotEmpty() && containsParameter(current, unboundParameters)
-            return AliasChain(links, current, keepsAlias)
+            val nullable = type.isMarkedNullable || links.any { it.isMarkedNullable }
+            return AliasChain(links, current, keepsAlias, nullable)
         }
 
         /**
@@ -1947,10 +1949,9 @@ class DslProcessor(
          * shape checks read the receiver and suspend markers from this type.
          */
         fun aliasTarget(type: KSType): KSType {
-            val chain = aliasChain(type)
-            val nullable = type.isMarkedNullable || chain.links.any { it.isMarkedNullable }
+            val chain = aliasChain(type, substitute = false)
             val target = chain.links.lastOrNull() ?: type
-            return if (nullable) target.makeNullable() else target
+            return if (chain.nullable) target.makeNullable() else target
         }
 
         /** Returns the immutable list type generated for a list result property. */
@@ -2083,7 +2084,7 @@ class DslProcessor(
          * annotation that expansion cannot carry over.
          */
         private fun hasUnrecoverableAliasAnnotations(type: KSType): Boolean =
-            aliasChain(type).links.any { hasAnnotatedAliasLink(it) }
+            aliasChain(type, substitute = false).links.any { hasAnnotatedAliasLink(it) }
 
         private fun hasAnnotatedAliasLink(type: KSType): Boolean {
             val alias = type.declaration as? KSTypeAlias
@@ -2105,11 +2106,19 @@ class DslProcessor(
             }
         }
 
+        /**
+         * Returns whether [declaration] is a compiler marker or an internal
+         * annotation that generated code never repeats. The diagnostic message
+         * rendering, the alias recovery and the visibility check share this
+         * predicate.
+         */
+        private fun isIgnoredTypeAnnotation(declaration: KSDeclaration): Boolean {
+            val qualifiedName = declaration.qualifiedName?.asString()
+            return qualifiedName in IGNORED_ANNOTATIONS || qualifiedName?.startsWith(KOTLIN_INTERNAL_PREFIX) == true
+        }
+
         private fun hasRenderableAnnotations(type: KSType): Boolean =
-            type.annotations.any { annotation ->
-                val qualifiedName = annotation.annotationType.resolve().declaration.qualifiedName?.asString()
-                qualifiedName !in IGNORED_ANNOTATIONS && qualifiedName?.startsWith(KOTLIN_INTERNAL_PREFIX) != true
-            }
+            type.annotations.any { !isIgnoredTypeAnnotation(it.annotationType.resolve().declaration) }
 
         /**
          * Renders a classifier type, keeping the type-use annotations of its
@@ -2174,10 +2183,7 @@ class DslProcessor(
         private fun areTypeAnnotationsVisible(type: KSType): Boolean {
             for (annotation in type.annotations) {
                 val declaration = annotation.annotationType.resolve().declaration
-                val qualifiedName = declaration.qualifiedName?.asString()
-                if (qualifiedName in IGNORED_ANNOTATIONS || qualifiedName?.startsWith(KOTLIN_INTERNAL_PREFIX) == true) {
-                    continue
-                }
+                if (isIgnoredTypeAnnotation(declaration)) continue
                 if (!isVisible(declaration)) return false
                 if (!areAnnotationArgumentsVisible(annotation)) return false
             }
@@ -2281,13 +2287,8 @@ class DslProcessor(
          */
         private fun KSAnnotation.toRenderableSpec(ignoreExtensionMarker: Boolean): AnnotationSpec? {
             if (ignoreExtensionMarker && isMarker(EXTENSION_FUNCTION_TYPE)) return null
-            val qualifiedName = annotationType.resolve().declaration.qualifiedName?.asString()
-            if (qualifiedName == null ||
-                qualifiedName in IGNORED_ANNOTATIONS ||
-                qualifiedName.startsWith(KOTLIN_INTERNAL_PREFIX)
-            ) {
-                return null
-            }
+            val declaration = annotationType.resolve().declaration
+            if (declaration.qualifiedName == null || isIgnoredTypeAnnotation(declaration)) return null
             return toAnnotationSpec()
         }
 
@@ -2514,80 +2515,24 @@ class DslProcessor(
          * newline in property initializers.
          */
         fun literal(property: KSPropertyDeclaration, propertyName: String, initial: String, type: KSType): CodeBlock? {
-            fun fail(detail: String): CodeBlock? {
-                report(property, "@DslValue.initial of property $propertyName is \"$initial\", which is $detail.")
+            val literalClass = expandAliases(type).makeNotNullable().declaration
+            val format = initialFormats.firstOrNull { literalClass.isClass(it.type) }
+            if (format == null) {
+                report(
+                    property,
+                    "@DslValue.initial of property $propertyName supports " +
+                            initialFormats.dropLast(1).joinToString(", ") { it.type.simpleName } +
+                            ", and ${initialFormats.last().type.simpleName} constants."
+                )
                 return null
             }
-
-            fun number(text: String): CodeBlock = CodeBlock.of("%L", text)
-
-            val literalType = expandAliases(type).makeNotNullable()
-            val literalClass = literalType.declaration
-            return when {
-                literalClass.isClass(INT) -> initial.toLongOrNull()?.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }
-                    ?.let { number(it.toString()) }
-                    ?: fail("not an Int constant")
-
-                literalClass.isClass(LONG) -> initial.toLongOrNull()?.let {
-                    number(if (it == Long.MIN_VALUE) "Long.MIN_VALUE" else "${it}L")
-                } ?: fail("not a Long constant")
-
-                literalClass.isClass(SHORT) -> initial.toLongOrNull()?.takeIf { it in Short.MIN_VALUE..Short.MAX_VALUE }
-                    ?.let { number(if (it < 0) "($it).toShort()" else "$it.toShort()") }
-                    ?: fail("not a Short constant")
-
-                literalClass.isClass(BYTE) -> initial.toLongOrNull()?.takeIf { it in Byte.MIN_VALUE..Byte.MAX_VALUE }
-                    ?.let { number(if (it < 0) "($it).toByte()" else "$it.toByte()") }
-                    ?: fail("not a Byte constant")
-
-                literalClass.isClass(DOUBLE) -> initial.toDoubleOrNull()?.takeIf(Double::isFinite)
-                    ?.let { number(formatFloatingPoint(it)) }
-                    ?: fail("not a finite Double constant")
-
-                literalClass.isClass(FLOAT) -> initial.toFloatOrNull()?.takeIf(Float::isFinite)
-                    ?.let { number("${formatFloatingPoint(it.toDouble())}f") }
-                    ?: fail("not a finite Float constant")
-
-                literalClass.isClass(BOOLEAN) -> when (initial) {
-                    "true", "false" -> number(initial)
-                    else -> fail("not a Boolean constant")
-                }
-
-                literalClass.isClass(CHAR) -> if (initial.length == 1) {
-                    CodeBlock.of("'%L'", escapeCharLiteral(initial[0]))
-                } else {
-                    fail("not a single character")
-                }
-
-                literalClass.isClass(STRING) -> CodeBlock.of("%S", initial)
-                literalClass.isClass(UINT) -> initial.toLongOrNull()?.takeIf { it in 0..UInt.MAX_VALUE.toLong() }
-                    ?.let { number("${it}u") }
-                    ?: fail("not a UInt constant")
-
-                literalClass.isClass(ULONG) -> initial.toULongOrNull()?.let { number("${it}uL") }
-                    ?: fail("not a ULong constant")
-
-                literalClass.isClass(USHORT) -> initial.toLongOrNull()?.takeIf { it in 0..UShort.MAX_VALUE.toLong() }
-                    ?.let { number("$it.toUShort()") }
-                    ?: fail("not a UShort constant")
-
-                literalClass.isClass(UBYTE) -> initial.toLongOrNull()?.takeIf { it in 0..UByte.MAX_VALUE.toLong() }
-                    ?.let { number("$it.toUByte()") }
-                    ?: fail("not a UByte constant")
-
-                else -> {
-                    report(
-                        property,
-                        "@DslValue.initial of property $propertyName supports Byte, Short, Int, Long, UByte, UShort, UInt, ULong, Float, Double, Boolean, Char, and String constants."
-                    )
-                    null
-                }
+            return format.parse(initial) ?: run {
+                report(
+                    property,
+                    "@DslValue.initial of property $propertyName is \"$initial\", which is ${format.detail}."
+                )
+                null
             }
-        }
-
-        private fun formatFloatingPoint(value: Double): String {
-            val rendered = value.toString()
-            return if (rendered.any { it == '.' || it == 'e' || it == 'E' }) rendered else "$rendered.0"
         }
 
         /**
@@ -2936,12 +2881,6 @@ class DslProcessor(
             UNSAFE_VARIANCE,
         ).mapTo(mutableSetOf()) { it.canonicalName }
 
-        /** Unsigned integral types, which KotlinPoet defines no constants for. */
-        val UINT = ClassName("kotlin", "UInt")
-        val ULONG = ClassName("kotlin", "ULong")
-        val USHORT = ClassName("kotlin", "UShort")
-        val UBYTE = ClassName("kotlin", "UByte")
-
         /**
          * Names declared by generated function bodies and the generated builder;
          * the templates below use the same constants, so a reference that reuses
@@ -3005,6 +2944,89 @@ private fun mergeAnnotations(sources: List<List<AnnotationSpec>>): List<Annotati
         for ((key, count) in localCounts) counts[key] = maxOf(counts[key] ?: 0, count)
     }
     return order.flatMap { key -> List(counts.getValue(key)) { specs.getValue(key) } }
+}
+
+/** Unsigned integral types, which KotlinPoet defines no constants for. */
+private val UINT = ClassName("kotlin", "UInt")
+private val ULONG = ClassName("kotlin", "ULong")
+private val USHORT = ClassName("kotlin", "UShort")
+private val UBYTE = ClassName("kotlin", "UByte")
+
+/**
+ * One supported `@DslValue.initial` type: the class it parses, the detail
+ * of a constant that does not fit, and the literal it renders to.
+ */
+private class InitialFormat(
+    val type: ClassName,
+    val detail: String,
+    val parse: (String) -> CodeBlock?,
+)
+
+/**
+ * The supported `@DslValue.initial` types, in the order the diagnostic
+ * lists them. The dispatch and the message derive from this table, so
+ * adding a type keeps both in sync.
+ */
+private val initialFormats = listOf(
+    InitialFormat(BYTE, "not a Byte constant") { initial ->
+        initial.toLongOrNull()?.takeIf { it in Byte.MIN_VALUE..Byte.MAX_VALUE }
+            ?.let { literalNumber(if (it < 0) "($it).toByte()" else "$it.toByte()") }
+    },
+    InitialFormat(SHORT, "not a Short constant") { initial ->
+        initial.toLongOrNull()?.takeIf { it in Short.MIN_VALUE..Short.MAX_VALUE }
+            ?.let { literalNumber(if (it < 0) "($it).toShort()" else "$it.toShort()") }
+    },
+    InitialFormat(INT, "not an Int constant") { initial ->
+        initial.toLongOrNull()?.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }
+            ?.let { literalNumber(it.toString()) }
+    },
+    InitialFormat(LONG, "not a Long constant") { initial ->
+        initial.toLongOrNull()?.let {
+            literalNumber(if (it == Long.MIN_VALUE) "Long.MIN_VALUE" else "${it}L")
+        }
+    },
+    InitialFormat(UBYTE, "not a UByte constant") { initial ->
+        initial.toLongOrNull()?.takeIf { it in 0..UByte.MAX_VALUE.toLong() }
+            ?.let { literalNumber("$it.toUByte()") }
+    },
+    InitialFormat(USHORT, "not a UShort constant") { initial ->
+        initial.toLongOrNull()?.takeIf { it in 0..UShort.MAX_VALUE.toLong() }
+            ?.let { literalNumber("$it.toUShort()") }
+    },
+    InitialFormat(UINT, "not a UInt constant") { initial ->
+        initial.toLongOrNull()?.takeIf { it in 0..UInt.MAX_VALUE.toLong() }
+            ?.let { literalNumber("${it}u") }
+    },
+    InitialFormat(ULONG, "not a ULong constant") { initial ->
+        initial.toULongOrNull()?.let { literalNumber("${it}uL") }
+    },
+    InitialFormat(FLOAT, "not a finite Float constant") { initial ->
+        initial.toFloatOrNull()?.takeIf(Float::isFinite)
+            ?.let { literalNumber("${formatFloatingPoint(it.toDouble())}f") }
+    },
+    InitialFormat(DOUBLE, "not a finite Double constant") { initial ->
+        initial.toDoubleOrNull()?.takeIf(Double::isFinite)
+            ?.let { literalNumber(formatFloatingPoint(it)) }
+    },
+    InitialFormat(BOOLEAN, "not a Boolean constant") { initial ->
+        when (initial) {
+            "true", "false" -> literalNumber(initial)
+            else -> null
+        }
+    },
+    InitialFormat(CHAR, "not a single character") { initial ->
+        if (initial.length == 1) CodeBlock.of("'%L'", escapeCharLiteral(initial[0])) else null
+    },
+    InitialFormat(STRING, "not a String constant") { CodeBlock.of("%S", it) },
+)
+
+/** Renders [text] as a literal expression. */
+private fun literalNumber(text: String): CodeBlock = CodeBlock.of("%L", text)
+
+/** Renders a floating point value so that it keeps its floating point type. */
+private fun formatFloatingPoint(value: Double): String {
+    val rendered = value.toString()
+    return if (rendered.any { it == '.' || it == 'e' || it == 'E' }) rendered else "$rendered.0"
 }
 
 /**
