@@ -173,4 +173,18 @@ class GenerationEdgeCaseTest {
         assertEquals("ok", result.value)
         assertEquals(listOf("ok"), result.items)
     }
+
+    @Test
+    fun `inner classes of generic outer classes keep their enclosing type`() {
+        val builder = File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "GenericOuterInnerDslBuilder.kt" }
+        assertNotNull(builder, "GenericOuterInnerDslBuilder.kt was not generated")
+        assertTrue(builder.readText().contains("GenericOuter<String>.GenericInner<Int>"), builder.readText())
+
+        val outer = GenericOuter<String>()
+        val inner = outer.GenericInner<Int>()
+        val result = buildGenericOuterInner(inner = inner)
+        assertSame(inner, result.inner)
+    }
 }

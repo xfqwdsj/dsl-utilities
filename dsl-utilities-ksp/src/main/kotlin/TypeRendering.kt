@@ -1,9 +1,9 @@
 package top.ltfan.dslutilities.ksp
 
-import com.google.devtools.ksp.getVisibility
 import com.google.devtools.ksp.symbol.*
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
+import com.squareup.kotlinpoet.ksp.toClassName
 import com.squareup.kotlinpoet.ksp.toTypeName
 
 /** Returns the immutable list type generated for a list result property. */
@@ -115,7 +115,7 @@ internal fun Checker.renderTypeName(symbol: KSNode, type: KSType, annotationsFro
                 // An alias whose target is nullable is nullable by name
                 // already; repeating the marker makes the generated file
                 // warn about redundant nullability.
-                val rendered = classifierTypeName(symbol, aliasUsage, aliasUsage, null)
+                val rendered = classifierTypeName(symbol, aliasUsage, aliasUsage, null) ?: return null
                 val renderedAlias = if (aliasTargetsNullable(type)) {
                     rendered.copy(nullable = false)
                 } else {
@@ -128,7 +128,7 @@ internal fun Checker.renderTypeName(symbol: KSNode, type: KSType, annotationsFro
                 val rendered = if (isFunction) {
                     lambdaTypeName(symbol, resolved, shape, annotationsFrom) ?: return null
                 } else {
-                    classifierTypeName(symbol, resolved, shape, annotationsFrom)
+                    classifierTypeName(symbol, resolved, shape, annotationsFrom) ?: return null
                 }
                 rendered.annotated(annotationSources, ignoreExtensionMarker = isFunction)
             }
@@ -152,9 +152,9 @@ internal fun Checker.classifierTypeName(
     type: KSType,
     shape: KSType,
     annotationsFrom: KSType?,
-): TypeName {
+): TypeName? {
     val declared = type.toTypeName()
-    val rawType = (declared as? ParameterizedTypeName)?.rawType ?: return declared
+    val parameterized = declared as? ParameterizedTypeName ?: return declared
     val carried = carriedArguments(annotationsFrom, type).ifEmpty { carriedArguments(shape, type) }
     val arguments = type.arguments.mapIndexed { index, argument ->
         val reference = argument.type ?: return@mapIndexed STAR
@@ -167,7 +167,47 @@ internal fun Checker.classifierTypeName(
             Variance.INVARIANT -> argumentName
         }
     }
-    return rawType.parameterizedBy(arguments).copy(nullable = declared.isNullable)
+    val rendered = innerClassTypeName(symbol, type.declaration as? KSClassDeclaration, parameterized, arguments)
+        ?: return null
+    return rendered.copy(nullable = declared.isNullable)
+}
+
+/**
+ * Returns [parameterized] with [arguments] applied. An inner class of a
+ * generic class needs the enclosing type qualifiers of its receivers, and
+ * the arguments of a type list the declaration's own arguments first and
+ * the enclosing class's arguments after them, so the enclosing declarations
+ * restore the qualifiers that the raw class name loses. Reports and returns
+ * `null` when the arguments do not line up with that chain.
+ */
+private fun Checker.innerClassTypeName(
+    symbol: KSNode,
+    declaration: KSClassDeclaration?,
+    parameterized: ParameterizedTypeName,
+    arguments: List<TypeName>,
+): TypeName? {
+    if (declaration == null || arguments.size <= declaration.typeParameters.size) {
+        return parameterized.copy(annotations = emptyList(), tags = emptyMap(), typeArguments = arguments)
+    }
+    val enclosing = generateSequence(declaration) { it.parentDeclaration as? KSClassDeclaration }.toList()
+    val counts = enclosing.map { it.typeParameters.size }
+    if (counts.size == 1 || counts.sum() != arguments.size) {
+        report(
+            symbol,
+            "The type of ${symbolDescription(symbol)} is unsupported: its enclosing type arguments cannot be reconstructed."
+        )
+        return null
+    }
+    var index = 0
+    val slices = counts.map { count ->
+        arguments.subList(index, index + count).also { index += count }
+    }
+    val base = slices.indexOfLast { it.isNotEmpty() }
+    var current: TypeName = enclosing[base].toClassName().parameterizedBy(slices[base])
+    for (level in base - 1 downTo 0) {
+        current = (current as ParameterizedTypeName).nestedClass(enclosing[level].simpleName.asString(), slices[level])
+    }
+    return current
 }
 
 /**
@@ -239,10 +279,7 @@ internal fun Checker.isAnnotationValueVisible(value: Any?): Boolean = when (valu
 internal fun isVisible(declaration: KSDeclaration): Boolean {
     var current: KSDeclaration? = declaration
     while (current != null) {
-        when (current.getVisibility()) {
-            Visibility.PRIVATE, Visibility.PROTECTED, Visibility.LOCAL -> return false
-            else -> {}
-        }
+        if (!current.isAccessibleFromGeneratedCode()) return false
         current = current.parentDeclaration
     }
     return true

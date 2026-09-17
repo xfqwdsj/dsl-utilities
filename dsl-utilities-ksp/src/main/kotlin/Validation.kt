@@ -118,13 +118,9 @@ internal fun Checker.instantiation(
     }
     var containingDeclaration: KSDeclaration? = declaration
     while (containingDeclaration != null) {
-        when (containingDeclaration.getVisibility()) {
-            Visibility.PRIVATE, Visibility.PROTECTED, Visibility.LOCAL -> {
-                report(property, "The $role of property $propertyName is not visible from generated code.")
-                return null
-            }
-
-            else -> {}
+        if (!containingDeclaration.isAccessibleFromGeneratedCode()) {
+            report(property, "The $role of property $propertyName is not visible from generated code.")
+            return null
         }
         containingDeclaration = containingDeclaration.parentDeclaration
     }
@@ -146,7 +142,8 @@ internal fun Checker.instantiation(
             val callable = constructor != null &&
                     constructor.parameters.all { it.hasDefault || it.isVararg } &&
                     constructorVisibility != Visibility.PRIVATE &&
-                    constructorVisibility != Visibility.PROTECTED
+                    constructorVisibility != Visibility.PROTECTED &&
+                    (constructorVisibility != Visibility.INTERNAL || declaration.containingFile != null)
             if (callable) Instantiation(declaration.toClassName(), construct = true) else {
                 report(
                     property,

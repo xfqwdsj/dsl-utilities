@@ -1,5 +1,6 @@
 package top.ltfan.dslutilities.ksp
 
+import com.google.devtools.ksp.getVisibility
 import com.google.devtools.ksp.isDefault
 import com.google.devtools.ksp.symbol.*
 import com.squareup.kotlinpoet.*
@@ -72,6 +73,18 @@ internal fun KSAnnotation.isMarker(className: ClassName): Boolean {
 
 /** Returns whether this type is `kotlin.Unit`. */
 internal fun KSType.isUnit(): Boolean = declaration.isClass(UNIT)
+
+/**
+ * Returns `true` when this declaration can be referenced from the generated
+ * code of the module being compiled. An `internal` declaration of another
+ * module is not accessible; KSP leaves [KSDeclaration.containingFile] `null`
+ * for declarations that come from a compiled dependency.
+ */
+internal fun KSDeclaration.isAccessibleFromGeneratedCode(): Boolean = when (getVisibility()) {
+    Visibility.PRIVATE, Visibility.PROTECTED, Visibility.LOCAL -> false
+    Visibility.INTERNAL -> containingFile != null
+    else -> true
+}
 
 internal fun KSAnnotation.string(name: String): String? =
     arguments.firstOrNull { it.name?.asString() == name }?.value as? String
