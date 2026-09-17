@@ -14,9 +14,9 @@ import kotlin.reflect.KClass
  *   `build…` function, so the compiler enforces their presence at every
  *   call site.
  * - Mutable properties (`var`) annotated with [DslValue] or [DslList] are
- *   set inside the DSL block. A nullable property is optional and defaults
- *   to `null`; a non-nullable property defaults to the [DslValue.initial]
- *   constant.
+ *   set inside the DSL block. A nullable [DslValue] property is optional
+ *   and defaults to `null`; a non-nullable [DslValue] property defaults to
+ *   the [DslValue.initial] constant, and a [DslList] property starts empty.
  * - Validation expressions are emitted inline into the generated accessors
  *   and into the generated `build` function, with property names as
  *   compile-time string constants.

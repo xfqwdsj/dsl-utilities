@@ -30,8 +30,8 @@ internal val IGNORED_ANNOTATIONS = setOf(
 
 /**
  * Names declared by generated function bodies and the generated builder;
- * the templates below use the same constants, so a reference that reuses
- * one of them receives an aliased import.
+ * the emission templates use the same constants, so a reference that
+ * reuses one of them receives an aliased import.
  */
 internal const val VALUE_PARAMETER = "newValue"
 internal const val STORED_VALUE = "stored"

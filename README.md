@@ -151,8 +151,9 @@ val pattern = buildPattern {
 ```
 
 `@DslList(children = …)` derives one function per child from the child's
-required properties: parameters carry those properties, the optional trailing
-block configures the child, and a child without required properties also
+required properties: parameters carry those properties, the trailing block is
+optional unless the child declares `@DslChild` functions of its own, and a
+child without required properties and without `@DslChild` functions also
 receives a property shorthand that adds a child built with the default
 configuration. `@DslBuilder(supertype = …)` makes the generated result class
 implement the supertype, which lets several children share the element type

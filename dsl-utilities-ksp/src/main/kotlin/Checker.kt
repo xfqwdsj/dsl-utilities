@@ -102,8 +102,7 @@ internal class Checker(internal val resolver: Resolver, internal val logger: KSP
      * repeats it; compiler markers and annotations that are expressed
      * through the type syntax read as absent. Arguments are rendered by
      * kotlinpoet-ksp, so a `String` or `Char` argument that contains an
-     * unpaired surrogate is emitted as `?`; the processor does not rebuild
-     * those arguments.
+     * unpaired surrogate reaches the generated file as `?`.
      */
     internal fun KSAnnotation.toRenderableSpec(ignoreExtensionMarker: Boolean): AnnotationSpec? {
         if (ignoreExtensionMarker && isMarker(EXTENSION_FUNCTION_TYPE)) return null

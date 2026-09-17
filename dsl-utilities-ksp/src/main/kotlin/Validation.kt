@@ -51,8 +51,8 @@ internal fun Checker.validator(
 
 /**
  * Returns the mapper info, `null` when no mapper is configured or a
- * diagnostic was reported; callers distinguish the two cases through
- * [Checker.valid].
+ * diagnostic was reported; callers compare [Checker.diagnosticCount]
+ * across the call to distinguish the two cases.
  */
 internal fun Checker.mapper(
     property: KSPropertyDeclaration,
