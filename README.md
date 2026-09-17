@@ -30,6 +30,8 @@ dependencies {
 }
 ```
 
+An Android target uses the `kspAndroid` configuration instead of `kspJvm`.
+
 Declare a DSL specification:
 
 ```kotlin
@@ -215,6 +217,17 @@ The generated classes then appear in the JVM/Android jars, the native klibs,
 the common metadata jar, and the sources jar. A library that exposes its own
 entry point instead sets `@DslBuilder(generateFunction = false)` and works
 with the generated builder class.
+
+## Migrating from 1.x
+
+Version 2.0 replaces the hand-written `ValueDsl`, `Value`, and
+`DslMutableList` API, along with the value and list property types that
+supported them, with annotation-driven generation, so code written against
+the 1.x DSL helpers does not compile unchanged. Rewrite a 1.x
+specification as a plain interface whose members carry `@DslValue`,
+`@DslList`, and `@DslChild` as shown in [Usage](#usage), and add the KSP
+processor to the consuming module; the generated builders, results, and
+`build…` functions follow the shapes described in this document.
 
 ## Modules
 

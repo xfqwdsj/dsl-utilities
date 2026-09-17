@@ -70,7 +70,7 @@ public annotation class DslBuilder(
  *   property rejects. An explicit empty string is an empty [String] value,
  *   or a constant that the parsed type rejects; a [mapper] receives the
  *   parsed value unchanged, so a constant the mapper cannot handle fails
- *   when the builder is created. A trailing newline of a [String] value is
+ *   when the builder is created. Trailing newlines of a [String] value are
  *   not preserved when the literal is emitted.
  * @param validator A [DslValidator] object or class. The generated setter
  *   calls `require` with this validator before storing the value. When
