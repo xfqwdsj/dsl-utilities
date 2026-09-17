@@ -70,7 +70,14 @@ class DslProcessor(
             return true
         }
         if (names.resultName == specName || names.builderName == specName) {
-            logger.error("The result and builder names of $specName must differ from the interface name.", spec)
+            val reused = listOfNotNull(
+                "resultName".takeIf { names.resultName == specName },
+                "builderName".takeIf { names.builderName == specName },
+            )
+            logger.error(
+                "@DslBuilder of $specName must not reuse the interface name for ${reused.joinToString(" and ")}.",
+                spec,
+            )
             return true
         }
         if (names.resultName == names.builderName) {
@@ -81,8 +88,15 @@ class DslProcessor(
             logger.error("@DslBuilder.functionName of $specName requires generateFunction.", spec)
             return true
         }
-        if (!isSimpleIdentifier(names.resultName) || !isSimpleIdentifier(names.builderName)) {
-            logger.error("The result and builder names of $specName must be simple identifiers.", spec)
+        val invalidNames = listOfNotNull(
+            "resultName (${names.resultName})".takeIf { !isSimpleIdentifier(names.resultName) },
+            "builderName (${names.builderName})".takeIf { !isSimpleIdentifier(names.builderName) },
+        )
+        if (invalidNames.isNotEmpty()) {
+            logger.error(
+                "@DslBuilder of $specName must use a simple identifier for ${invalidNames.joinToString(" and ")}.",
+                spec,
+            )
             return true
         }
         if (names.generateFunction && !isSimpleIdentifier(names.functionName)) {
