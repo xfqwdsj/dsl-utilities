@@ -1029,6 +1029,11 @@ interface NestedFunctionReceiverDsl {
 }
 
 @DslBuilder
+interface NullableNestedFunctionReceiverDsl {
+    val callback: (PlainChildDsl.() -> Unit)?.() -> Unit
+}
+
+@DslBuilder
 interface EmptyInitialDsl {
     @DslValue(initial = "")
     var text: String

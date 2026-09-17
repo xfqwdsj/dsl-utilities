@@ -1174,4 +1174,19 @@ class AliasHandlingTest {
         val result = buildNestedFunctionReceiver(callback = { })
         assertNotNull(result.callback)
     }
+
+    @Test
+    fun `nullable nested function receivers keep their parentheses`() {
+        val builder = File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "NullableNestedFunctionReceiverDslBuilder.kt" }
+        assertNotNull(builder, "NullableNestedFunctionReceiverDslBuilder.kt was not generated")
+        assertTrue(
+            builder.readText().contains("(PlainChildDsl.() -> Unit)?.() -> Unit"),
+            builder.readText(),
+        )
+
+        val result = buildNullableNestedFunctionReceiver(callback = { })
+        assertNotNull(result.callback)
+    }
 }
