@@ -3123,6 +3123,12 @@ private fun KSAnnotation.typeArray(name: String): List<KSType> =
         }
         .orEmpty()
 
+/**
+ * Renders [character] as the body of a Kotlin character literal. Control
+ * characters, surrogates, and other characters that would either not
+ * survive the UTF-8 encoding of the generated file or stay invisible in
+ * its source are written as `\uXXXX` escapes.
+ */
 private fun escapeCharLiteral(character: Char): String = when (character) {
     '\\' -> "\\\\"
     '\'' -> "\\'"
@@ -3130,8 +3136,27 @@ private fun escapeCharLiteral(character: Char): String = when (character) {
     '\r' -> "\\r"
     '\t' -> "\\t"
     '$' -> "\\$"
-    else -> character.toString()
+    else -> if (Character.getType(character) in escapedCharacterTypes) {
+        "\\u${character.code.toString(16).padStart(4, '0')}"
+    } else {
+        character.toString()
+    }
 }
+
+/**
+ * The character categories that [escapeCharLiteral] escapes: control and
+ * unassigned characters, surrogates that a UTF-8 file cannot carry, and
+ * the invisible format and separator characters.
+ */
+private val escapedCharacterTypes = setOf(
+    Character.CONTROL.toInt(),
+    Character.FORMAT.toInt(),
+    Character.SURROGATE.toInt(),
+    Character.LINE_SEPARATOR.toInt(),
+    Character.PARAGRAPH_SEPARATOR.toInt(),
+    Character.PRIVATE_USE.toInt(),
+    Character.UNASSIGNED.toInt(),
+)
 
 /** Provides [DslProcessor] to the KSP runtime through the service loader. */
 class DslProcessorProvider : SymbolProcessorProvider {
