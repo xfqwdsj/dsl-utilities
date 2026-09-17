@@ -613,14 +613,14 @@ class DslProcessor(
         }
         for (property in listProperties) {
             if (property.validator != null) {
-                buildCode.addStatement("for ($ELEMENT in %N) {", property.nameField())
+                buildCode.beginControlFlow("for ($ELEMENT in %N)", property.nameField())
                 buildCode.addStatement(
                     "%L(%L.validate($ELEMENT)) { %L }",
                     context.member(REQUIRE),
                     property.validator.code(context),
                     literalString(property.message),
                 )
-                buildCode.addStatement("}")
+                buildCode.endControlFlow()
             }
         }
         val arguments = mutableListOf<CodeBlock>()
