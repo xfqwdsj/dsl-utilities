@@ -1,6 +1,7 @@
 package top.ltfan.dslutilities.test
 
 import top.ltfan.dslutilities.test.collision.toList
+import java.io.File
 import kotlin.test.*
 
 class SampleDslTest {
@@ -312,7 +313,7 @@ class LambdaDslTest {
 
     @Test
     fun `generated builder renders function types faithfully`() {
-        val file = java.io.File("build/generated/ksp")
+        val file = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "LambdaDslBuilder.kt" }
         assertNotNull(file, "LambdaDslBuilder.kt was not generated")
@@ -521,7 +522,7 @@ class AliasHandlingTest {
 
     @Test
     fun `type-use annotations survive alias expansion`() {
-        val builder = java.io.File("build/generated/ksp")
+        val builder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "AliasedAnnotationDslBuilder.kt" }
         assertNotNull(builder, "AliasedAnnotationDslBuilder.kt was not generated")
@@ -610,7 +611,7 @@ class AliasHandlingTest {
 
     @Test
     fun `list container type-use annotations are preserved`() {
-        val builder = java.io.File("build/generated/ksp")
+        val builder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "AliasedMarkedIntsDslBuilder.kt" }
         assertNotNull(builder, "AliasedMarkedIntsDslBuilder.kt was not generated")
@@ -724,7 +725,7 @@ class AliasHandlingTest {
 
     @Test
     fun `type-use annotations on type arguments are preserved`() {
-        val builder = java.io.File("build/generated/ksp")
+        val builder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "GenericArgumentAnnotationDslBuilder.kt" }
         assertNotNull(builder, "GenericArgumentAnnotationDslBuilder.kt was not generated")
@@ -743,7 +744,7 @@ class AliasHandlingTest {
 
     @Test
     fun `annotations in alias targets are carried onto substituted arguments`() {
-        val argumentBuilder = java.io.File("build/generated/ksp")
+        val argumentBuilder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "CarriedArgumentAnnotationDslBuilder.kt" }
         assertNotNull(argumentBuilder, "CarriedArgumentAnnotationDslBuilder.kt was not generated")
@@ -753,7 +754,7 @@ class AliasHandlingTest {
             argumentBuilder.readText(),
         )
 
-        val functionBuilder = java.io.File("build/generated/ksp")
+        val functionBuilder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "CarriedFunctionAnnotationDslBuilder.kt" }
         assertNotNull(functionBuilder, "CarriedFunctionAnnotationDslBuilder.kt was not generated")
@@ -771,7 +772,7 @@ class AliasHandlingTest {
 
     @Test
     fun `kept aliases do not duplicate target annotations`() {
-        val builder = java.io.File("build/generated/ksp")
+        val builder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "MarkedKeepDslBuilder.kt" }
         assertNotNull(builder, "MarkedKeepDslBuilder.kt was not generated")
@@ -786,7 +787,7 @@ class AliasHandlingTest {
 
     @Test
     fun `annotations in nested alias targets are carried`() {
-        val builder = java.io.File("build/generated/ksp")
+        val builder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "WrappedDslBuilder.kt" }
         assertNotNull(builder, "WrappedDslBuilder.kt was not generated")
@@ -802,13 +803,13 @@ class AliasHandlingTest {
 
     @Test
     fun `annotations on intermediate alias links render the alias by name`() {
-        val linkedBuilder = java.io.File("build/generated/ksp")
+        val linkedBuilder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "LinkedAnnotationDslBuilder.kt" }
         assertNotNull(linkedBuilder, "LinkedAnnotationDslBuilder.kt was not generated")
         assertTrue(linkedBuilder.readText().contains("LinkedAnnotationOuter<Int>"), linkedBuilder.readText())
 
-        val topBuilder = java.io.File("build/generated/ksp")
+        val topBuilder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "TopTargetAnnotationDslBuilder.kt" }
         assertNotNull(topBuilder, "TopTargetAnnotationDslBuilder.kt was not generated")
@@ -823,7 +824,7 @@ class AliasHandlingTest {
 
     @Test
     fun `repeated annotations of one source stay repeated`() {
-        val builder = java.io.File("build/generated/ksp")
+        val builder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "RepeatedAnnotationDslBuilder.kt" }
         assertNotNull(builder, "RepeatedAnnotationDslBuilder.kt was not generated")
@@ -834,7 +835,7 @@ class AliasHandlingTest {
 
     @Test
     fun `annotations in nested wrappers are carried`() {
-        val builder = java.io.File("build/generated/ksp")
+        val builder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "NestedWrappedDslBuilder.kt" }
         assertNotNull(builder, "NestedWrappedDslBuilder.kt was not generated")
@@ -853,7 +854,7 @@ class AliasHandlingTest {
 
     @Test
     fun `annotations on inherited generic members are carried`() {
-        val builder = java.io.File("build/generated/ksp")
+        val builder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "InheritedAnnotationDslBuilder.kt" }
         assertNotNull(builder, "InheritedAnnotationDslBuilder.kt was not generated")
@@ -869,7 +870,7 @@ class AliasHandlingTest {
 
     @Test
     fun `annotations on inherited child scope parameters are carried`() {
-        val builder = java.io.File("build/generated/ksp")
+        val builder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "AnnotatedParamScopeDslBuilder.kt" }
         assertNotNull(builder, "AnnotatedParamScopeDslBuilder.kt was not generated")
@@ -887,7 +888,7 @@ class AliasHandlingTest {
 
     @Test
     fun `annotations on child block aliases are carried`() {
-        val builder = java.io.File("build/generated/ksp")
+        val builder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "AnnotatedBlockScopeDslBuilder.kt" }
         assertNotNull(builder, "AnnotatedBlockScopeDslBuilder.kt was not generated")
@@ -905,7 +906,7 @@ class AliasHandlingTest {
 
     @Test
     fun `generic alias child blocks keep the receiver style`() {
-        val builder = java.io.File("build/generated/ksp")
+        val builder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "GenericAliasedChildScopeDslBuilder.kt" }
         assertNotNull(builder, "GenericAliasedChildScopeDslBuilder.kt was not generated")
@@ -917,7 +918,7 @@ class AliasHandlingTest {
 
     @Test
     fun `generic alias child blocks carry their annotations`() {
-        val builder = java.io.File("build/generated/ksp")
+        val builder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "AnnotatedGenericChildScopeDslBuilder.kt" }
         assertNotNull(builder, "AnnotatedGenericChildScopeDslBuilder.kt was not generated")
@@ -954,13 +955,13 @@ class AliasHandlingTest {
 
     @Test
     fun `child scope parameters do not shadow the generated backing field`() {
-        val blockName = java.io.File("build/generated/ksp")
+        val blockName = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "ShadowingBlockNameDslBuilder.kt" }
         assertNotNull(blockName, "ShadowingBlockNameDslBuilder.kt was not generated")
         assertTrue(blockName.readText().contains("childField_"), blockName.readText())
 
-        val valueName = java.io.File("build/generated/ksp")
+        val valueName = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "ShadowingValueNameDslBuilder.kt" }
         assertNotNull(valueName, "ShadowingValueNameDslBuilder.kt was not generated")
@@ -1057,7 +1058,7 @@ class AliasHandlingTest {
 
     @Test
     fun `specifications nested in lowercase containers render nested references`() {
-        val builder = java.io.File("build/generated/ksp")
+        val builder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "nestedSpecDslBuilder.kt" }
         assertNotNull(builder, "nestedSpecDslBuilder.kt was not generated")
@@ -1085,7 +1086,7 @@ class AliasHandlingTest {
 
     @Test
     fun `aliases avoid declarations in the same package`() {
-        val builder = java.io.File("build/generated/ksp")
+        val builder = File("build/generated/ksp")
             .walkTopDown()
             .firstOrNull { it.name == "ShadowedValidatorDslBuilder.kt" }
         assertNotNull(builder, "ShadowedValidatorDslBuilder.kt was not generated")
@@ -1132,5 +1133,17 @@ class AliasHandlingTest {
         val result = buildEmptyInitial { }
         assertEquals("", result.text)
         assertEquals("", result.nullable)
+    }
+
+    @Test
+    fun `a user annotation named like a compiler marker is not a marker`() {
+        val builder = File("build/generated/ksp")
+            .walkTopDown()
+            .firstOrNull { it.name == "MarkerNameCollisionDslBuilder.kt" }
+        assertNotNull(builder, "MarkerNameCollisionDslBuilder.kt was not generated")
+        assertFalse(builder.readText().contains("String.() -> Unit"), builder.readText())
+
+        val result = buildMarkerNameCollision(callback = { })
+        assertNotNull(result.callback)
     }
 }

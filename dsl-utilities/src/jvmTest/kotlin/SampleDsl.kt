@@ -1007,6 +1007,14 @@ class newValueRef
 @Suppress("unused", "ClassName")
 class newValueRef_
 
+@Target(AnnotationTarget.TYPE)
+annotation class ExtensionFunctionType
+
+@DslBuilder
+interface MarkerNameCollisionDsl {
+    val callback: @ExtensionFunctionType (String) -> Unit
+}
+
 @DslBuilder
 interface EmptyInitialDsl {
     @DslValue(initial = "")
