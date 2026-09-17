@@ -1081,6 +1081,28 @@ interface EscapedCharInitialDsl {
     var text: String
 }
 
+@DslBuilder
+interface FloatingPointInitialDsl {
+    @DslValue(initial = "0.1")
+    var ratio: Float
+
+    @DslValue(initial = "1e30")
+    var huge: Float
+
+    @DslValue(initial = "1e-320")
+    var tiny: Double
+}
+
+/** Messages that carry an unpaired surrogate, rendered through `require`. */
+@DslBuilder
+interface EscapedMessageDsl {
+    @DslValue(validator = NonBlankValidator::class, message = "value \ud800 message")
+    val value: String
+
+    @DslList(validator = NonBlankValidator::class, message = "list \ud800 message")
+    var items: MutableList<String>
+}
+
 /**
  * Shadows the standard library function of the same name for declarations
  * of this package, so generated code has to bind the standard library
