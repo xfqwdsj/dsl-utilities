@@ -1011,11 +1011,7 @@ class DslProcessor(
                 return null
             }
             val child = resolveChild(childDeclaration, checker) ?: return null
-            val elementQualifiedName = resolvedElementType.makeNotNullable().declaration.qualifiedName?.asString()
-            val acceptsResult = elementQualifiedName == ANY.canonicalName ||
-                    elementQualifiedName == child.resultType.canonicalName ||
-                    child.resultSupertype?.let(resolvedElementType::isAssignableFrom) == true
-            if (!acceptsResult) {
+            if (!acceptsChildResult(resolvedElementType, child, checker)) {
                 checker.report(
                     property,
                     "Child ${child.specTypeName.canonicalName} produces ${child.resultType.canonicalName}, which is not assignable to the element type $elementTypeName of @DslList property $name."
@@ -2057,9 +2053,18 @@ class DslProcessor(
                         null
                     }
 
-                    renderByName ->
-                        classifierTypeName(symbol, aliasUsage, aliasUsage, null)
-                            .annotated(annotationSources, ignoreExtensionMarker = isFunction)
+                    renderByName -> {
+                        // An alias whose target is nullable is nullable by name
+                        // already; repeating the marker makes the generated file
+                        // warn about redundant nullability.
+                        val rendered = classifierTypeName(symbol, aliasUsage, aliasUsage, null)
+                        val renderedAlias = if (aliasTargetsNullable(type)) {
+                            rendered.copy(nullable = false)
+                        } else {
+                            rendered
+                        }
+                        renderedAlias.annotated(annotationSources, ignoreExtensionMarker = isFunction)
+                    }
 
                     else -> {
                         val rendered = if (isFunction) {
@@ -2076,6 +2081,13 @@ class DslProcessor(
                 null
             }
         }
+
+        /**
+         * Returns whether the alias targets of [type] are nullable, so the
+         * rendered alias name is nullable by itself.
+         */
+        private fun aliasTargetsNullable(type: KSType): Boolean =
+            aliasChain(type).links.any { it.isMarkedNullable }
 
         /**
          * Returns `true` when a link of the alias chain carries a type-use
@@ -2310,6 +2322,12 @@ class DslProcessor(
             null
         }
 
+        /**
+         * Returns a key for the erasure of [type], used to detect generated
+         * overloads that clash once type arguments and nullability are dropped.
+         * A type without a qualified name falls back to its rendered form, since
+         * there is no declaration name to compare.
+         */
         fun erasureKey(type: KSType): String =
             expandAliases(type).makeNotNullable().declaration.qualifiedName?.asString()
                 ?: type.toString().substringBefore('<').removeSuffix("?")
@@ -2819,6 +2837,10 @@ class DslProcessor(
         var fieldName: String = "${name}Field"
     }
 
+    /**
+     * Lowercases the first character of [name] unless the second character is
+     * uppercase, so an acronym like `HTMLDsl` keeps its spelling.
+     */
     private fun decapitalize(name: String): String =
         if (name.length >= 2 && name[1].isUpperCase()) name else name.replaceFirstChar { it.lowercase() }
 
