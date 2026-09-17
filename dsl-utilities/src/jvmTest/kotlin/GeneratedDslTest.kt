@@ -1153,7 +1153,7 @@ class AliasHandlingTest {
             .walkTopDown()
             .firstOrNull { it.name == "ParameterNameCollisionDslBuilder.kt" }
         assertNotNull(builder, "ParameterNameCollisionDslBuilder.kt was not generated")
-        assertFalse(builder.readText().contains("renamed: String"), builder.readText())
+        assertFalse(builder.readText().contains("renamed:"), builder.readText())
 
         val result = buildParameterNameCollision(callback = { })
         assertNotNull(result.callback)
