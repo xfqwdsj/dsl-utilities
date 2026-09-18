@@ -284,40 +284,69 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
                 else -> supertypeOverrides += name
             }
         }
-        for (member in hierarchy.abstractFunctions(supertypeDeclaration)) {
-            checker.report(
-                spec,
-                "The result supertype ${supertypeDeclaration.simpleName.asString()} declares function ${
-                    member.declaration.simpleName.asString()
-                }, which the generated result cannot implement."
-            )
-        }
         for (member in hierarchy.allFunctions(supertypeDeclaration)) {
             val function = member.declaration
-            if (function.isAbstract || function.extensionReceiver != null) continue
             val name = function.simpleName.asString()
             val componentIndex = name.removePrefix("component").toIntOrNull()
             val parameters = function.parameters.map { parameter ->
                 checker.substituteType(parameter.type.resolve(), member.environment)
             }
-            val conflicts = when {
-                name == "copy" && function.typeParameters.isEmpty() ->
+            val returnType = function.returnType?.resolve()
+                ?.let { checker.substituteType(it, member.environment) }
+            // A `componentK` declaration shares the name and the empty
+            // parameter list of the synthesized member for the K-th result
+            // property; the synthesized `copy` carries default values and
+            // cannot override a declaration with the same parameter types.
+            val componentProperty = if (function.typeParameters.isEmpty() && parameters.isEmpty()) {
+                componentIndex?.takeIf { it in 1..resultProperties.size }?.let { resultProperties[it - 1] }
+            } else {
+                null
+            }
+            val synthesizedCopy = name == "copy" &&
+                    function.typeParameters.isEmpty() &&
                     parameters.size == resultProperties.size &&
-                            parameters.zip(resultProperties).all { (parameter, property) ->
-                                property.first !in childScopesByName &&
-                                        resolvedResultPropertyTypes[property.first]?.let { checker.sameType(parameter, it) } == true
-                            }
+                    parameters.zip(resultProperties).all { (parameter, property) ->
+                        property.first !in childScopesByName &&
+                                resolvedResultPropertyTypes[property.first]?.let {
+                                    checker.sameType(
+                                        parameter,
+                                        it
+                                    )
+                                } == true
+                    }
+            val implementable = when {
+                componentProperty != null -> {
+                    val provided = if (componentProperty.first in childScopesByName) {
+                        childScopesByName.getValue(componentProperty.first).child.resultSupertype
+                    } else {
+                        resolvedResultPropertyTypes[componentProperty.first]
+                    }
+                    returnType != null &&
+                            (provided?.let(returnType::isAssignableFrom) == true ||
+                                    (provided == null && returnType.declaration.isClass(ANY)))
+                }
 
-                componentIndex != null && componentIndex in 1..resultProperties.size ->
-                    parameters.isEmpty()
+                name == "equals" && function.typeParameters.isEmpty() && parameters.size == 1 ->
+                    parameters.single().isMarkedNullable && parameters.single().declaration.isClass(ANY)
+
+                (name == "hashCode" || name == "toString") &&
+                        function.typeParameters.isEmpty() && parameters.isEmpty() ->
+                    true
 
                 else -> false
             }
-            if (conflicts) {
-                checker.report(
-                    spec,
-                    "The result supertype ${supertypeDeclaration.simpleName.asString()} declares function $name, which conflicts with the generated data class member $name."
-                )
+            when {
+                function.isAbstract && !implementable ->
+                    checker.report(
+                        spec,
+                        "The result supertype ${supertypeDeclaration.simpleName.asString()} declares function $name, which the generated result cannot implement."
+                    )
+
+                !function.isAbstract && (componentProperty != null || synthesizedCopy) ->
+                    checker.report(
+                        spec,
+                        "The result supertype ${supertypeDeclaration.simpleName.asString()} declares function $name, which conflicts with the generated data class member $name."
+                    )
             }
         }
     }
