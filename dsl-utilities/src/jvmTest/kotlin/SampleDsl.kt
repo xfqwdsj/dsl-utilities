@@ -468,10 +468,19 @@ class DefaultArgumentValidator(private val expected: String = "valid") : DslVali
     override fun validate(value: String): Boolean = value == expected
 }
 
+class SecondaryConstructorValidator private constructor(private val expected: String) : DslValidator<String> {
+    constructor() : this("valid-secondary")
+
+    override fun validate(value: String): Boolean = value == expected
+}
+
 @DslBuilder
 interface ConstructorValidatorDsl {
     @DslValue(initial = "valid", validator = DefaultArgumentValidator::class)
     var value: String
+
+    @DslValue(initial = "valid-secondary", validator = SecondaryConstructorValidator::class)
+    var secondary: String
 }
 
 interface ConcreteBackingName {

@@ -97,12 +97,16 @@ class GenerationEdgeCaseTest {
     }
 
     @Test
-    fun `validator classes with default arguments are callable`() {
+    fun `validator classes with default arguments or secondary constructors are callable`() {
         val result = buildConstructorValidator()
 
         assertEquals("valid", result.value)
+        assertEquals("valid-secondary", result.secondary)
         assertFailsWith<IllegalArgumentException> {
             buildConstructorValidator { value = "invalid" }
+        }
+        assertFailsWith<IllegalArgumentException> {
+            buildConstructorValidator { secondary = "other" }
         }
     }
 
