@@ -109,6 +109,10 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
             }
             continue
         }
+        if (property.extensionReceiver != null) {
+            checker.report(property, "Property $name must not declare an extension receiver.")
+            continue
+        }
         if (dslValue != null && dslList != null) {
             checker.report(property, "Property $name must not be annotated with both @DslValue and @DslList.")
             continue
@@ -247,6 +251,15 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         for (member in hierarchy.allProperties(supertypeDeclaration)) {
             val property = member.declaration
             val name = property.simpleName.asString()
+            if (property.extensionReceiver != null) {
+                if (hierarchy.isAbstract(property)) {
+                    checker.report(
+                        spec,
+                        "The result supertype ${supertypeDeclaration.simpleName.asString()} declares property $name, which the generated result cannot implement."
+                    )
+                }
+                continue
+            }
             val expectedType = checker.substituteType(property.type.resolve(), member.environment)
             val rendered = checker.renderTypeName(property, expectedType) ?: break
             val provided = resultPropertyTypes[name]
@@ -286,6 +299,15 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         }
         for (member in hierarchy.allFunctions(supertypeDeclaration)) {
             val function = member.declaration
+            if (function.extensionReceiver != null) {
+                if (function.isAbstract) {
+                    checker.report(
+                        spec,
+                        "The result supertype ${supertypeDeclaration.simpleName.asString()} declares function ${function.simpleName.asString()}, which the generated result cannot implement."
+                    )
+                }
+                continue
+            }
             val name = function.simpleName.asString()
             val componentIndex = name.removePrefix("component").toIntOrNull()
             val parameters = function.parameters.map { parameter ->
