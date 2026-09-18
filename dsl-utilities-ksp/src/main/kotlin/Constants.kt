@@ -16,6 +16,7 @@ internal const val KOTLIN_INTERNAL_PREFIX = "kotlin.internal."
 internal val EXTENSION_FUNCTION_TYPE = ClassName("kotlin", "ExtensionFunctionType")
 internal val PARAMETER_NAME = ClassName("kotlin", "ParameterName")
 internal val UNSAFE_VARIANCE = ClassName("kotlin", "UnsafeVariance")
+internal val OPT_IN = ClassName("kotlin", "OptIn")
 
 /**
  * Type annotations that are compiler markers rather than user-visible
