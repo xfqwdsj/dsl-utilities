@@ -19,6 +19,9 @@ class DslProcessor(
 ) : SymbolProcessor {
 
     internal val generatedTypeOwners = mutableMapOf<String, String>()
+
+    /** Generated type names by lowercase spelling, so case-only conflicts are visible. */
+    internal val generatedTypeSpellings = mutableMapOf<String, String>()
     internal val generatedFunctionOwners = mutableMapOf<String, MutableList<Pair<String, GeneratedSignature>>>()
     internal val generatedPropertyOwners = mutableMapOf<String, String>()
     internal val reportedStarProjections = mutableSetOf<String>()

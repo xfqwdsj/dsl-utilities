@@ -32,12 +32,19 @@ internal fun DslProcessor.reserveGeneratedNames(
                     declaration is KSTypeAlias && declaration.simpleName.asString() == name
                 }
         val reservedBy = generatedTypeOwners[qualifiedName]
+        val spelling = generatedTypeSpellings.putIfAbsent(qualifiedName.lowercase(), qualifiedName)
         when {
             existing ->
                 checker.report(spec, "Generated type $qualifiedName conflicts with an existing declaration.")
 
             reservedBy != null && reservedBy != owner ->
                 checker.report(spec, "Generated type $qualifiedName is also produced by $reservedBy.")
+
+            spelling != null && spelling != qualifiedName ->
+                checker.report(
+                    spec,
+                    "Generated type $qualifiedName conflicts with $spelling on a case-insensitive file system."
+                )
         }
     }
 
