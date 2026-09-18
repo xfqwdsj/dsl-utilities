@@ -1,5 +1,6 @@
 package top.ltfan.dslutilities.ksp
 
+import com.google.devtools.ksp.getVisibility
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 import com.squareup.kotlinpoet.*
@@ -150,7 +151,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
     for (member in hierarchy.allFunctions(spec)) {
         val function = member.declaration
         specMemberNames += function.simpleName.asString()
-        if (function.isAbstract) continue
+        if (function.isAbstract || function.getVisibility() == Visibility.PRIVATE) continue
         if (function.simpleName.asString() == BUILD_FUNCTION &&
             function.parameters.isEmpty() &&
             function.extensionReceiver == null
@@ -250,6 +251,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         val resultPropertyTypes = resultProperties.toMap()
         for (member in hierarchy.allProperties(supertypeDeclaration)) {
             val property = member.declaration
+            if (property.getVisibility() == Visibility.PRIVATE) continue
             val name = property.simpleName.asString()
             if (property.extensionReceiver != null) {
                 if (hierarchy.isAbstract(property)) {
@@ -299,6 +301,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         }
         for (member in hierarchy.allFunctions(supertypeDeclaration)) {
             val function = member.declaration
+            if (function.getVisibility() == Visibility.PRIVATE) continue
             if (function.extensionReceiver != null) {
                 if (function.isAbstract) {
                     checker.report(
