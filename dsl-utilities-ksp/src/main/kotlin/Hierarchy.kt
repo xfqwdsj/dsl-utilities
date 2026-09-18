@@ -29,25 +29,32 @@ internal class Hierarchy(
         walk(declaration, emptyMap()) { member, environment, _ ->
             if (member !is KSFunctionDeclaration) return@walk
             val signature = checker.functionSignature(member, environment)
-            if (!seen.add(signature)) return@walk
-            if (member.isAbstract) members[signature] = SubstitutedMember(member, environment)
+            val candidate = SubstitutedMember(member, environment)
+            val previous = members[signature]
+            when {
+                previous != null -> members[signature] = checker.moreSpecific(previous, candidate)
+                !seen.add(signature) -> Unit
+                member.isAbstract -> members[signature] = candidate
+            }
         }
         return members.values.toList()
     }
 
     /**
-     * Collects every function of the hierarchy, abstract or concrete, so the
-     * caller can diagnose annotations placed on functions that declare their
-     * own body.
+     * Collects every function of the hierarchy, abstract or concrete, so
+     * the caller can diagnose annotations placed on functions that declare
+     * their own body. Sibling declarations of one signature merge into the
+     * declaration with the most specific return type, which is the one an
+     * implementing class must satisfy.
      */
     fun allFunctions(declaration: KSClassDeclaration): List<SubstitutedMember<KSFunctionDeclaration>> {
         val members = LinkedHashMap<String, SubstitutedMember<KSFunctionDeclaration>>()
-        val seen = mutableSetOf<String>()
         walk(declaration, emptyMap()) { member, environment, _ ->
             if (member !is KSFunctionDeclaration) return@walk
             val signature = checker.functionSignature(member, environment)
-            if (!seen.add(signature)) return@walk
-            members[signature] = SubstitutedMember(member, environment)
+            val candidate = SubstitutedMember(member, environment)
+            val previous = members[signature]
+            members[signature] = previous?.let { checker.moreSpecific(it, candidate) } ?: candidate
         }
         return members.values.toList()
     }
@@ -209,4 +216,25 @@ internal class Hierarchy(
         val environment: Map<KSTypeParameter, KSType>,
         val depth: Int,
     )
+}
+
+/**
+ * Returns the declaration that stands for both [first] and [second] when
+ * one signature is inherited more than once: the more specific return
+ * type wins, and the nearer declaration wins when the return types denote
+ * the same type. Kotlin rejects an inheritance whose return types are
+ * unrelated, so that case keeps the first declaration.
+ */
+private fun Checker.moreSpecific(
+    first: SubstitutedMember<KSFunctionDeclaration>,
+    second: SubstitutedMember<KSFunctionDeclaration>,
+): SubstitutedMember<KSFunctionDeclaration> {
+    val firstType = first.declaration.returnType?.resolve()?.let { substituteType(it, first.environment) }
+    val secondType = second.declaration.returnType?.resolve()?.let { substituteType(it, second.environment) }
+    if (firstType == null || secondType == null || firstType.isError || secondType.isError) return first
+    return when {
+        secondType.isAssignableFrom(firstType) -> first
+        firstType.isAssignableFrom(secondType) -> second
+        else -> first
+    }
 }
