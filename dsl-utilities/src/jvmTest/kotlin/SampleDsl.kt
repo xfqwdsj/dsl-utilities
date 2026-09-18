@@ -1195,3 +1195,27 @@ interface SpecConcreteMemberExtensionDsl {
     val String.label: String
         get() = "label"
 }
+
+interface CovariantComponentWide {
+    operator fun component1(): CharSequence
+}
+
+interface CovariantComponentNarrow {
+    operator fun component1(): String
+}
+
+interface CovariantComponentSupertype : CovariantComponentWide, CovariantComponentNarrow
+
+@DslBuilder(supertype = CovariantComponentSupertype::class)
+interface CovariantComponentDsl {
+    val name: String
+}
+
+interface ConcreteComponentWide {
+    operator fun component1(): CharSequence = "default"
+}
+
+@DslBuilder(supertype = ConcreteComponentWide::class)
+interface ConcreteComponentDsl {
+    val name: String
+}

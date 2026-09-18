@@ -234,4 +234,18 @@ class GenerationEdgeCaseTest {
 
         assertEquals(2, result.value)
     }
+
+    @Test
+    fun `covariant component declarations keep the narrowest inherited type`() {
+        val result = buildCovariantComponent(name = "value")
+
+        assertEquals("value", result.component1())
+    }
+
+    @Test
+    fun `a concrete component declaration is overridden covariantly`() {
+        val result = buildConcreteComponent(name = "value")
+
+        assertEquals("value", result.component1())
+    }
 }
