@@ -198,4 +198,19 @@ class GenerationEdgeCaseTest {
         assertSame(layered, result.layered)
         assertSame(gapped, result.gapped)
     }
+
+    @Test
+    fun `a member named Long keeps the minimum value literal intact`() {
+        val result = buildShadowedLongInitial { }
+
+        assertEquals(Long.MIN_VALUE, result.Long)
+    }
+
+    @Test
+    fun `a result supertype satisfies its component and Any members`() {
+        val result = buildSatisfiableComponent(name = "value")
+
+        assertEquals("value", result.component1())
+        assertTrue(result.toString().isNotEmpty())
+    }
 }

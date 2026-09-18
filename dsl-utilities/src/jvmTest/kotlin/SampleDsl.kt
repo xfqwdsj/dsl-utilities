@@ -1156,3 +1156,21 @@ interface NegativeBoundaryInitialDsl {
     @DslValue(initial = "-9223372036854775808")
     var long: Long
 }
+
+@DslBuilder
+interface ShadowedLongInitialDsl {
+    @Suppress("PropertyName")
+    @DslValue(initial = "-9223372036854775808")
+    var Long: Long
+}
+
+interface SatisfiableMembers {
+    operator fun component1(): String
+
+    override fun toString(): String
+}
+
+@DslBuilder(supertype = SatisfiableMembers::class)
+interface SatisfiableComponentDsl {
+    val name: String
+}
