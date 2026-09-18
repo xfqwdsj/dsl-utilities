@@ -1221,6 +1221,24 @@ interface PrivateBuildHelperDsl {
     private fun build(): String = "helper"
 }
 
+@RequiresOptIn
+annotation class ExperimentalDslType
+
+@ExperimentalDslType
+class ExperimentalValue(val text: String)
+
+@OptIn(ExperimentalDslType::class)
+@DslBuilder
+interface ClassOptInDsl {
+    val value: ExperimentalValue
+}
+
+@DslBuilder
+interface PropertyOptInDsl {
+    @OptIn(ExperimentalDslType::class)
+    val value: ExperimentalValue
+}
+
 @DslBuilder(supertype = ConcreteMemberExtensions::class)
 interface ConcreteMemberExtensionDsl {
     val name: String

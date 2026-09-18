@@ -10,6 +10,15 @@ class GenerationEdgeCaseTest {
         assertEquals(1, buildPrivateBuildHelper { }.value)
     }
 
+    @OptIn(ExperimentalDslType::class)
+    @Test
+    fun `source opt-ins apply to generated files`() {
+        val value = ExperimentalValue("ok")
+        assertSame(value, buildClassOptIn(value).value)
+        assertSame(value, buildFileOptIn(value).value)
+        assertSame(value, buildPropertyOptIn(value).value)
+    }
+
     @Test
     fun `escaped and reserved required names generate valid entry points`() {
         val result = buildReservedNames(`when` = "now", block = "body", builder = "factory")
