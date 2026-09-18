@@ -180,11 +180,18 @@ class GenerationEdgeCaseTest {
             .walkTopDown()
             .firstOrNull { it.name == "GenericOuterInnerDslBuilder.kt" }
         assertNotNull(builder, "GenericOuterInnerDslBuilder.kt was not generated")
-        assertTrue(builder.readText().contains("GenericOuter<String>.GenericInner<Int>"), builder.readText())
+        val text = builder.readText()
+        assertTrue(text.contains("GenericOuter<String>.GenericInner<Int>"), text)
+        assertTrue(text.contains("LayeredOuter<String>.LayeredMiddle<Int>.LayeredLeaf<Long>"), text)
+        assertTrue(text.contains("GappedOuter<String>.GappedMiddle.GappedLeaf<Long>"), text)
 
         val outer = GenericOuter<String>()
         val inner = outer.GenericInner<Int>()
-        val result = buildGenericOuterInner(inner = inner)
+        val layered = LayeredOuter<String>().LayeredMiddle<Int>().LayeredLeaf<Long>()
+        val gapped = GappedOuter<String>().GappedMiddle().GappedLeaf<Long>()
+        val result = buildGenericOuterInner(inner = inner, layered = layered, gapped = gapped)
         assertSame(inner, result.inner)
+        assertSame(layered, result.layered)
+        assertSame(gapped, result.gapped)
     }
 }
