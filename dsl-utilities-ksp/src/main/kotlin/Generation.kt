@@ -136,6 +136,15 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         val function = member.declaration
         specMemberNames += function.simpleName.asString()
         if (function.isAbstract) continue
+        if (function.simpleName.asString() == BUILD_FUNCTION &&
+            function.parameters.isEmpty() &&
+            function.extensionReceiver == null
+        ) {
+            checker.report(
+                function,
+                "The generated builder declares $BUILD_FUNCTION() to return the built result, so the DSL function $BUILD_FUNCTION() must take a parameter or use another name."
+            )
+        }
         if (function.annotation(DSL_CHILD_ANNOTATION) != null) {
             checker.report(
                 function,
@@ -262,6 +271,34 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
                     member.declaration.simpleName.asString()
                 }, which the generated result cannot implement."
             )
+        }
+        for (member in hierarchy.allFunctions(supertypeDeclaration)) {
+            val function = member.declaration
+            if (function.isAbstract || function.extensionReceiver != null) continue
+            val name = function.simpleName.asString()
+            val componentIndex = name.removePrefix("component").toIntOrNull()
+            val parameters = function.parameters.map { parameter ->
+                checker.substituteType(parameter.type.resolve(), member.environment)
+            }
+            val conflicts = when {
+                name == "copy" && function.typeParameters.isEmpty() ->
+                    parameters.size == resultProperties.size &&
+                            parameters.zip(resultProperties).all { (parameter, property) ->
+                                property.first !in childScopesByName &&
+                                        resolvedResultPropertyTypes[property.first]?.let { checker.sameType(parameter, it) } == true
+                            }
+
+                componentIndex != null && componentIndex in 1..resultProperties.size ->
+                    parameters.isEmpty()
+
+                else -> false
+            }
+            if (conflicts) {
+                checker.report(
+                    spec,
+                    "The result supertype ${supertypeDeclaration.simpleName.asString()} declares function $name, which conflicts with the generated data class member $name."
+                )
+            }
         }
     }
     if (!checker.valid) return handled(checker)
