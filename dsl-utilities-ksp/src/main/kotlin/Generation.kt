@@ -320,8 +320,9 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
             // parameter list of the synthesized member for the K-th result
             // property; the synthesized `copy` carries default values and
             // cannot override a declaration with the same parameter types.
+            val componentPosition = componentIndex?.takeIf { it in 1..resultProperties.size }
             val componentProperty = if (function.typeParameters.isEmpty() && parameters.isEmpty()) {
-                componentIndex?.takeIf { it in 1..resultProperties.size }?.let { resultProperties[it - 1] }
+                componentPosition?.let { resultProperties[it - 1] }
             } else {
                 null
             }
@@ -365,7 +366,8 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
                         "The result supertype ${supertypeDeclaration.simpleName.asString()} declares function $name, which the generated result cannot implement."
                     )
 
-                !function.isAbstract && (componentProperty != null || synthesizedCopy) ->
+                !function.isAbstract &&
+                        (synthesizedCopy || (componentPosition != null && parameters.isEmpty() && !implementable)) ->
                     checker.report(
                         spec,
                         "The result supertype ${supertypeDeclaration.simpleName.asString()} declares function $name, which conflicts with the generated data class member $name."
