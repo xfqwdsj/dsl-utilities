@@ -25,6 +25,10 @@ internal class InitialFormat(
  * The supported `@DslValue.initial` types, in the order the diagnostic
  * lists them. The dispatch and the message derive from this table, so
  * adding a type keeps both in sync.
+ *
+ * A rendered literal combines numeric, character and string literals with
+ * conversions called on the literal receiver, so no name in the generated
+ * expression can be captured by a DSL member.
  */
 internal val initialFormats = listOf(
     InitialFormat(BYTE, "not a Byte constant") { initial ->
@@ -41,7 +45,7 @@ internal val initialFormats = listOf(
     },
     InitialFormat(LONG, "not a Long constant") { initial ->
         initial.toLongOrNull()?.let {
-            literalNumber(if (it == Long.MIN_VALUE) "Long.MIN_VALUE" else "${it}L")
+            literalNumber(if (it == Long.MIN_VALUE) "(-9223372036854775807L - 1L)" else "${it}L")
         }
     },
     InitialFormat(UBYTE, "not a UByte constant") { initial ->
