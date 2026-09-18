@@ -1,6 +1,7 @@
 package top.ltfan.dslutilities.ksp
 
 import com.google.devtools.ksp.KspExperimental
+import com.google.devtools.ksp.getConstructors
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 
@@ -10,7 +11,14 @@ import com.google.devtools.ksp.symbol.*
  * file-creation failures or later redeclaration errors. Declarations
  * already present in the specification's package are reserved as well,
  * because generated functions and extension properties share the
- * package-level scope with them.
+ * package-level scope with them. A generated class constructor conflicts
+ * with a same-named package function that declares the same parameter
+ * types, and a generated function conflicts with the constructor of a
+ * same-named package class; both directions use exact signature matches.
+ *
+ * @param constructorTypes the parameter types of the generated result
+ *   constructor in order; `null` marks a property whose generated result
+ *   class has no counterpart in existing declarations.
  */
 internal fun DslProcessor.reserveGeneratedNames(
     spec: KSClassDeclaration,
@@ -20,6 +28,7 @@ internal fun DslProcessor.reserveGeneratedNames(
     specQualifiedName: String,
     requiredProperties: List<RequiredProperty>,
     listProperties: List<ListProperty>,
+    constructorTypes: List<KSType?>,
     checker: Checker,
 ) {
     fun qualified(name: String): String = if (packageName.isEmpty()) name else "$packageName.$name"
@@ -31,11 +40,32 @@ internal fun DslProcessor.reserveGeneratedNames(
                 declarationsInPackage(resolver, packageName).any { declaration ->
                     declaration is KSTypeAlias && declaration.simpleName.asString() == name
                 }
+        val constructorParameters = if (name == names.builderName) emptyList() else constructorTypes
+        val existingFunction = resolver.getFunctionDeclarationsByName(
+            resolver.getKSNameFromString(qualifiedName),
+            includeTopLevel = true,
+        ).any { function ->
+            function.parentDeclaration == null &&
+                    function.isDeclaredInThisModule() &&
+                    function.packageName.asString() == packageName &&
+                    function.extensionReceiver == null &&
+                    function.typeParameters.isEmpty() &&
+                    function.parameters.size == constructorParameters.size &&
+                    function.parameters.withIndex().all { (index, parameter) ->
+                        constructorParameters[index]?.let { checker.sameType(parameter.type.resolve(), it) } == true
+                    }
+        }
         val reservedBy = generatedTypeOwners[qualifiedName]
         val spelling = generatedTypeSpellings.putIfAbsent(qualifiedName.lowercase(), qualifiedName)
         when {
             existing ->
                 checker.report(spec, "Generated type $qualifiedName conflicts with an existing declaration.")
+
+            existingFunction ->
+                checker.report(
+                    spec,
+                    "Generated type $qualifiedName conflicts with an existing function declaration of the same signature."
+                )
 
             reservedBy != null && reservedBy != owner ->
                 checker.report(spec, "Generated type $qualifiedName is also produced by $reservedBy.")
@@ -59,7 +89,15 @@ internal fun DslProcessor.reserveGeneratedNames(
                     function.isDeclaredInThisModule() &&
                     function.packageName.asString() == packageName &&
                     matchesSignature(function, signature, checker, resolver)
-        }
+        } || resolver.getClassDeclarationByName(resolver.getKSNameFromString(qualifiedName))?.let { declaration ->
+            declaration.packageName.asString() == packageName &&
+                    declaration.isDeclaredInThisModule() &&
+                    declaration.isAccessibleFromGeneratedCode() &&
+                    declaration.getConstructors().any { constructor ->
+                        constructor.isAccessibleFromGeneratedCode() &&
+                                matchesSignature(constructor, signature, checker, resolver)
+                    }
+        } == true
         val reservedBy = generatedFunctionOwners[qualifiedName]
             ?.firstOrNull { (_, reserved) -> sameSignature(reserved, signature, checker) }
             ?.first

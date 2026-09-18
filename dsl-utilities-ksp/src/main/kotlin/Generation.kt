@@ -231,6 +231,15 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         // case in `acceptsChildResult` covers the rest.
         for (property in childScopes) put(property.name, property.child.resultSupertype)
     }
+
+    // The generated result constructor takes every result property; a child
+    // property carries a generated result class, which existing declarations
+    // cannot name, so that position stays out of constructor comparisons.
+    val childScopeNames = childScopes.mapTo(mutableSetOf()) { it.name }
+    val constructorTypes = resultProperties.map { (name, _) ->
+        if (name in childScopeNames) null else resolvedResultPropertyTypes[name]
+    }
+
     if (resultSupertype != null) {
         val supertypeDeclaration = resultSupertype.declaration
         val childScopesByName = childScopes.associateBy { it.name }
@@ -368,6 +377,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         specQualifiedName,
         requiredProperties,
         listProperties,
+        constructorTypes,
         checker,
     )
     if (!checker.valid) return handled(checker)
