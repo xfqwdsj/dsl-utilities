@@ -27,7 +27,8 @@ import kotlin.reflect.KClass
  * with a trailing `Dsl` removed, or with `Result` appended when the
  * interface name has no trailing `Dsl`. The builder class is named
  * after the annotated interface with `Builder` appended, and the
- * build function is named `build` followed by the result class name.
+ * build function is named `build` followed by the interface's base
+ * name (the default result name).
  * [resultName], [builderName], and [functionName] override these names,
  * and [generateFunction] controls whether the build function is generated.
  * Generic base interfaces must use concrete type arguments; star-projected
@@ -100,12 +101,12 @@ public annotation class DslValue(
  *
  * @param children DslBuilder interfaces that become element functions of
  *   the generated builder. Each child receives a function named after the
- *   child, whose parameters carry the required properties of the child and
- *   whose optional trailing block configures the child; the function
- *   builds the child value and adds it to the list. A child whose
- *   properties all have values and that has no required child scopes also
- *   receives a property shorthand that adds a child built with the default
- *   configuration.
+ *   child: leading parameters carry the child's required properties, and a
+ *   trailing block parameter configures the child, with a default value
+ *   unless the child declares `@DslChild` functions. The function builds
+ *   the child value and adds it to the list. A child without required
+ *   properties and without `@DslChild` functions also receives a property
+ *   shorthand that adds a child built with the default configuration.
  * @param validator A [DslValidator] object or class applied to each
  *   element in the generated `build` function. When unset, every element
  *   is accepted.
@@ -123,12 +124,12 @@ public annotation class DslList(
 
 /**
  * Declares a function of a [DslBuilder] interface as a child scope. The
- * function declares a single trailing parameter whose type is a function
- * with the child [DslBuilder] interface as receiver, followed by any
- * parameters carrying the required properties of the child; the processor
- * generates the function body, which builds the child value and stores it.
- * The child value is required in the generated `build` function, so the
- * child scope function is invoked before building.
+ * function declares its leading parameters as the required properties of
+ * the child and ends with a parameter whose type is a function with the
+ * child [DslBuilder] interface as receiver; the processor generates the
+ * function body, which builds the child value and stores it. The child
+ * value is required in the generated `build` function, so the child scope
+ * function is invoked before building.
  */
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.BINARY)
