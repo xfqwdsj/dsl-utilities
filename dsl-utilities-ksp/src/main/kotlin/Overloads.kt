@@ -9,16 +9,17 @@ import com.google.devtools.ksp.symbol.*
  * Reports generated declaration collisions before opening an output
  * file, keeping invalid custom or derived names as KSP diagnostics
  * instead of file-creation failures or later redeclaration errors.
- * Declarations already present in the specification's package are
- * reserved as well, because generated functions and extension
- * properties share the package-level scope with them. A generated
- * class constructor conflicts with a same-named package function that
- * declares the same parameter types, and a generated function conflicts
- * with the constructor of a same-named package class; both directions
- * use exact signature matches. A generated function whose trailing
- * configuration block is optional also conflicts with a same-named
- * declaration that declares only the parameters before that block,
- * because a call that omits the block is applicable to both declarations.
+ * Declarations already present in the specification's package are reserved
+ * as well, because generated functions and extension properties share
+ * the package-level scope with them. A generated class constructor
+ * conflicts with a same-named package function that declares the
+ * same parameter types, and a generated function conflicts with the
+ * constructor of a same-named package class; both directions use exact
+ * signature matches. A generated function whose trailing configuration
+ * block is optional also conflicts with a same-named declaration
+ * whose leading parameters are those before that block and whose
+ * remaining parameters all have defaults, because a call that omits
+ * the block and those defaults is applicable to both declarations.
  *
  * @param constructorTypes the parameter types of the generated result
  *   constructor in order; `null` marks a property whose generated result
@@ -226,11 +227,15 @@ internal fun matchesSignature(
 }
 
 /**
- * Returns `true` when [function] declares exactly the parameters that
- * the generated [signature] declares before its trailing configuration
- * block, so a call that omits the block is applicable to both declarations
- * and overload resolution decides between them. A generic declaration
- * cannot take precedence over the non-generic generated function.
+ * Returns `true` when [function] declares the parameters that the
+ * generated [signature] declares before its trailing configuration block,
+ * so a call that omits the block is applicable to both declarations
+ * and overload resolution decides between them. The parameters after
+ * that prefix must all have defaults: a call that also omits them
+ * stays applicable, while a required parameter makes the declaration
+ * inapplicable and a vararg parameter loses overload resolution to the
+ * non-vararg generated function. A generic declaration cannot take
+ * precedence over the non-generic generated function.
  */
 internal fun matchesOptionalBlockPrefix(
     function: KSFunctionDeclaration,
@@ -239,10 +244,11 @@ internal fun matchesOptionalBlockPrefix(
 ): Boolean {
     if (!checker.sameType(function.extensionReceiver?.resolve(), signature.receiver)) return false
     if (function.typeParameters.isNotEmpty()) return false
-    if (function.parameters.size != signature.parameters.size) return false
-    return function.parameters.withIndex().all { (index, parameter) ->
-        checker.sameType(parameter.type.resolve(), signature.parameters[index])
+    if (function.parameters.size < signature.parameters.size) return false
+    for ((index, parameter) in signature.parameters.withIndex()) {
+        if (!checker.sameType(function.parameters[index].type.resolve(), parameter)) return false
     }
+    return function.parameters.drop(signature.parameters.size).all { it.hasDefault }
 }
 
 /**
