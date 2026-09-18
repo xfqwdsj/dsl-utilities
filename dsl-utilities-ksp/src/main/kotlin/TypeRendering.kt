@@ -19,8 +19,8 @@ internal fun Checker.immutableListType(elementType: KSType): KSType? {
 }
 
 /**
- * Returns an overload key of the function name, its extension receiver and
- * its parameter types, after applying the declaring type's generic
+ * Returns an overload key of the function name, its extension receiver
+ * and its parameter types, after applying the declaring type's generic
  * environment.
  */
 internal fun Checker.functionSignature(
@@ -179,8 +179,8 @@ internal fun Checker.classifierTypeName(
 
 /**
  * Returns [parameterized] with [arguments] applied. An inner class of a
- * generic class renders with its enclosing type qualifiers, and KSP lists a
- * type's own arguments first and the enclosing class's arguments after
+ * generic class renders with its enclosing type qualifiers, and KSP lists
+ * a type's own arguments first and the enclosing class's arguments after
  * them, so the parameterized class name is rebuilt from the enclosing
  * declarations. Reports and returns `null` when the arguments do not line
  * up with that chain.
@@ -294,9 +294,9 @@ internal fun isVisible(declaration: KSDeclaration): Boolean {
  * Renders a function type as a lambda so that the suspend modifier, the
  * extension receiver and the nullability survive rendering; a parameter
  * keeps the name carried by the compiler's `ParameterName` marker when
- * substitution preserves it, and stays unnamed otherwise. [shape] is the
- * alias-resolved type that carries the receiver and suspend markers dropped
- * by substitution.
+ * substitution preserves it, and stays unnamed otherwise. [shape] is
+ * the alias-resolved type that carries the receiver and suspend markers
+ * dropped by substitution.
  */
 internal fun Checker.lambdaTypeName(symbol: KSNode, type: KSType, shape: KSType, annotationsFrom: KSType?): TypeName? {
     val arguments = type.arguments

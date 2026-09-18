@@ -16,23 +16,24 @@ import kotlin.reflect.KClass
  * - Mutable properties (`var`) annotated with [DslValue] or [DslList] are
  *   set inside the DSL block. A nullable [DslValue] property is optional
  *   and defaults to `null`; a non-nullable [DslValue] property defaults to
- *   the [DslValue.initial] constant, and a [DslList] property starts empty.
+ *   the [DslValue.initial] constant, and a [DslList] property starts
+ *   empty.
  * - Validation expressions are emitted inline into the generated accessors
  *   and into the generated `build` function, with property names as
  *   compile-time string constants.
  * - The generated result class exposes read-only properties, so the built
  *   value is locked against modification by the type system.
  *
- * The generated result class is named after the annotated interface
- * with a trailing `Dsl` removed, or with `Result` appended when the
- * interface name has no trailing `Dsl`. The builder class is named
- * after the annotated interface with `Builder` appended, and the
- * build function is named `build` followed by the interface's base
- * name (the default result name).
- * [resultName], [builderName], and [functionName] override these names,
- * and [generateFunction] controls whether the build function is generated.
- * Generic base interfaces must use concrete type arguments; star-projected
- * inherited members cannot be represented by the generated declarations.
+ * The generated result class is named after the annotated interface with
+ * a trailing `Dsl` removed, or with `Result` appended when the interface
+ * name has no trailing `Dsl`. The builder class is named after the
+ * annotated interface with `Builder` appended, and the build function is
+ * named `build` followed by the interface's base name (the default result
+ * name). [resultName], [builderName], and [functionName] override these
+ * names, and [generateFunction] controls whether the build function is
+ * generated. Generic base interfaces must use concrete type arguments;
+ * star-projected inherited members cannot be represented by the generated
+ * declarations.
  *
  * @param supertype The non-generic interface implemented by the generated
  *   result class. Declaring a supertype lets several result classes be
@@ -72,8 +73,8 @@ public annotation class DslBuilder(
  *   or a constant that the parsed type rejects; a [mapper] receives the
  *   parsed value unchanged, so a constant the mapper cannot handle fails
  *   when the builder is created. Trailing newlines of a [String] value are
- *   not preserved when the literal is emitted, unless the value contains an
- *   unpaired surrogate, which is rendered verbatim.
+ *   not preserved when the literal is emitted, unless the value contains
+ *   an unpaired surrogate, which is rendered verbatim.
  * @param validator A [DslValidator] object or class. The generated setter
  *   calls `require` with this validator before storing the value. When
  *   unset, the property accepts every value.
