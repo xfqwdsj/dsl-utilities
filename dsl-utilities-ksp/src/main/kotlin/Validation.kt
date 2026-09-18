@@ -143,7 +143,7 @@ internal fun Checker.instantiation(
                     constructor.parameters.all { it.hasDefault || it.isVararg } &&
                     constructorVisibility != Visibility.PRIVATE &&
                     constructorVisibility != Visibility.PROTECTED &&
-                    (constructorVisibility != Visibility.INTERNAL || declaration.containingFile != null)
+                    (constructorVisibility != Visibility.INTERNAL || declaration.isDeclaredInThisModule())
             if (callable) Instantiation(declaration.toClassName(), construct = true) else {
                 report(
                     property,

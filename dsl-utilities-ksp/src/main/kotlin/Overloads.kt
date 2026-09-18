@@ -56,7 +56,7 @@ internal fun DslProcessor.reserveGeneratedNames(
             includeTopLevel = true,
         ).any { function ->
             function.parentDeclaration == null &&
-                    function.containingFile != null &&
+                    function.isDeclaredInThisModule() &&
                     function.packageName.asString() == packageName &&
                     matchesSignature(function, signature, checker, resolver)
         }
@@ -88,7 +88,7 @@ internal fun DslProcessor.reserveGeneratedNames(
                 val existing = declarationsInPackage(resolver, packageName).any { declaration ->
                     declaration is KSPropertyDeclaration &&
                             declaration.parentDeclaration == null &&
-                            declaration.containingFile != null &&
+                            declaration.isDeclaredInThisModule() &&
                             declaration.simpleName.asString() == child.functionName &&
                             declaration.extensionReceiver?.resolve()
                                 ?.let { checker.erasureKey(it) } == specQualifiedName

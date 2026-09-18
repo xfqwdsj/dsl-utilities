@@ -75,14 +75,20 @@ internal fun KSAnnotation.isMarker(className: ClassName): Boolean {
 internal fun KSType.isUnit(): Boolean = declaration.isClass(UNIT)
 
 /**
+ * Returns `true` when this declaration is compiled from a source file of the
+ * module being processed. KSP leaves [KSDeclaration.containingFile] `null`
+ * for declarations that come from a compiled dependency.
+ */
+internal fun KSDeclaration.isDeclaredInThisModule(): Boolean = containingFile != null
+
+/**
  * Returns `true` when this declaration can be referenced from the generated
  * code of the module being compiled. An `internal` declaration of another
- * module is not accessible; KSP leaves [KSDeclaration.containingFile] `null`
- * for declarations that come from a compiled dependency.
+ * module is not accessible.
  */
 internal fun KSDeclaration.isAccessibleFromGeneratedCode(): Boolean = when (getVisibility()) {
     Visibility.PRIVATE, Visibility.PROTECTED, Visibility.LOCAL -> false
-    Visibility.INTERNAL -> containingFile != null
+    Visibility.INTERNAL -> isDeclaredInThisModule()
     else -> true
 }
 

@@ -409,4 +409,4 @@ private fun requiredArguments(properties: List<RequiredProperty>): CodeBlock =
  * Returns a copy of this type with the nullable marker set; every other
  * property is preserved.
  */
-internal fun TypeName.asNullable(): TypeName = copy(nullable = true)
+private fun TypeName.asNullable(): TypeName = copy(nullable = true)

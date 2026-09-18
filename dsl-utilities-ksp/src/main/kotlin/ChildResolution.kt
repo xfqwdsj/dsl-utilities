@@ -259,7 +259,7 @@ internal fun DslProcessor.resolveChild(declaration: KSClassDeclaration, checker:
     val resultSupertype = resolveResultSupertype(declaration, annotation, checker, checkSubclassing = false)
     if (checker.diagnosticCount != diagnostics) return null
     val resultVisibility = restrictiveVisibility(listOfNotNull(builderVisibility, resultSupertype?.visibility))
-    if (resultVisibility == KModifier.INTERNAL && declaration.containingFile == null) {
+    if (resultVisibility == KModifier.INTERNAL && !declaration.isDeclaredInThisModule()) {
         checker.report(
             declaration,
             "Child $specName has an internal generated result that is not accessible from this module."
@@ -329,7 +329,7 @@ internal fun resolveResultSupertype(
     // result is emitted in the specification's package and module.
     if (checkSubclassing && Modifier.SEALED in declaration.modifiers) {
         val samePackage = declaration.packageName.asString() == spec.packageName.asString()
-        val sameModule = declaration.containingFile != null
+        val sameModule = declaration.isDeclaredInThisModule()
         if (!samePackage || !sameModule) {
             checker.report(
                 spec,
