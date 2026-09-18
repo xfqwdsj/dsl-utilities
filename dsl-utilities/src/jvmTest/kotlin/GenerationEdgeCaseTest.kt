@@ -213,4 +213,25 @@ class GenerationEdgeCaseTest {
         assertEquals("value", result.component1())
         assertTrue(result.toString().isNotEmpty())
     }
+
+    @Test
+    fun `concrete member extensions of a supertype are inherited`() {
+        val result = buildConcreteMemberExtension(name = "value")
+
+        assertEquals("value", result.name)
+        with(result) {
+            assertEquals("label", "text".label)
+            assertEquals("described", "text".describe())
+        }
+    }
+
+    @Test
+    fun `a concrete member extension in a specification is inherited`() {
+        val result = buildSpecConcreteMemberExtension {
+            value = 2
+            assertEquals("label", "text".label)
+        }
+
+        assertEquals(2, result.value)
+    }
 }

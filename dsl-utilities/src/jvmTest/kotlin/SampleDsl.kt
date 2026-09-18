@@ -1174,3 +1174,24 @@ interface SatisfiableMembers {
 interface SatisfiableComponentDsl {
     val name: String
 }
+
+interface ConcreteMemberExtensions {
+    val String.label: String
+        get() = "label"
+
+    fun String.describe(): String = "described"
+}
+
+@DslBuilder(supertype = ConcreteMemberExtensions::class)
+interface ConcreteMemberExtensionDsl {
+    val name: String
+}
+
+@DslBuilder
+interface SpecConcreteMemberExtensionDsl {
+    @DslValue(initial = "1")
+    var value: Int
+
+    val String.label: String
+        get() = "label"
+}
