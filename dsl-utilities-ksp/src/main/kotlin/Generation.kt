@@ -38,6 +38,17 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         logger.error("The result and builder names of $specName must differ from each other.", spec)
         return true
     }
+    if (names.generateFunction && names.functionName in setOf(names.resultName, names.builderName)) {
+        val conflicting = listOfNotNull(
+            "resultName".takeIf { names.functionName == names.resultName },
+            "builderName".takeIf { names.functionName == names.builderName },
+        )
+        logger.error(
+            "@DslBuilder.functionName of $specName must differ from ${conflicting.joinToString(" and ")}, so calls resolve to the generated function.",
+            spec,
+        )
+        return true
+    }
     if (!names.generateFunction && names.functionName.isNotEmpty()) {
         logger.error("@DslBuilder.functionName of $specName requires generateFunction.", spec)
         return true
