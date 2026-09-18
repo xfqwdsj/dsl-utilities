@@ -540,6 +540,24 @@ fun buildOverloadSpec(block: (Int) -> Unit) {
     block(0)
 }
 
+@DslBuilder
+interface RequiredSuffixDsl {
+    val id: String
+}
+
+@Suppress("UNUSED_PARAMETER")
+fun buildRequiredSuffix(id: String, flag: Boolean) {
+}
+
+@DslBuilder
+interface VarargSuffixDsl {
+    val id: String
+}
+
+@Suppress("UNUSED_PARAMETER")
+fun buildVarargSuffix(id: String, vararg flags: Boolean) {
+}
+
 interface EventContainer {
     val child: SampleEvent
 }

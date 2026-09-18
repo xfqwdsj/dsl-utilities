@@ -106,6 +106,22 @@ class AliasHandlingTest {
     }
 
     @Test
+    fun `required-suffix overloads keep the generated function callable`() {
+        val generated: (String, RequiredSuffixDsl.() -> Unit) -> RequiredSuffix = ::buildRequiredSuffix
+
+        assertEquals("id", generated("id") { }.id)
+        buildRequiredSuffix("id", true)
+    }
+
+    @Test
+    fun `vararg-suffix overloads keep the generated function callable`() {
+        val generated: (String, VarargSuffixDsl.() -> Unit) -> VarargSuffix = ::buildVarargSuffix
+
+        assertEquals("id", generated("id") { }.id)
+        buildVarargSuffix("id", true)
+    }
+
+    @Test
     fun `list container type-use annotations are preserved`() {
         val builder = File("build/generated/ksp")
             .walkTopDown()
