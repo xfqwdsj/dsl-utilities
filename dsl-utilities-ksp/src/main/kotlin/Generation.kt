@@ -69,7 +69,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         return true
     }
 
-    val checker = Checker(resolver, logger)
+    val checker = Checker(resolver, logger, packageName)
     val specQualifiedName = spec.qualifiedName?.asString()
     if (specQualifiedName == null) {
         checker.report(

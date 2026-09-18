@@ -278,13 +278,13 @@ internal fun Checker.isAnnotationValueVisible(value: Any?): Boolean = when (valu
 }
 
 /**
- * Returns `true` when [declaration] and its parents are visible at the
- * package level.
+ * Returns `true` when [declaration] and its parents can be referenced from
+ * the generated file.
  */
-internal fun isVisible(declaration: KSDeclaration): Boolean {
+internal fun Checker.isVisible(declaration: KSDeclaration): Boolean {
     var current: KSDeclaration? = declaration
     while (current != null) {
-        if (!current.isAccessibleFromGeneratedCode()) return false
+        if (!isAccessibleFromGeneratedCode(current)) return false
         current = current.parentDeclaration
     }
     return true

@@ -12,8 +12,15 @@ import com.squareup.kotlinpoet.ksp.toAnnotationSpec
  * diagnostic was an unresolved type. Type rendering is delegated to
  * KotlinPoet, so nullability, arguments, annotations and function types
  * follow the library's handling instead of hand-written string building.
+ * [generatedPackage] is the package of the file under generation, which
+ * decides whether package-scoped declarations (Java package-private) are
+ * accessible.
  */
-internal class Checker(internal val resolver: Resolver, internal val logger: KSPLogger) {
+internal class Checker(
+    internal val resolver: Resolver,
+    internal val logger: KSPLogger,
+    internal val generatedPackage: String,
+) {
     var valid = true
         private set
 

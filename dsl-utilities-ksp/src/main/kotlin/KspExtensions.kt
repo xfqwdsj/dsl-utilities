@@ -82,15 +82,18 @@ internal fun KSType.isUnit(): Boolean = declaration.isClass(UNIT)
 internal fun KSDeclaration.isDeclaredInThisModule(): Boolean = containingFile != null
 
 /**
- * Returns `true` when this declaration can be referenced from the
- * generated code of the module being compiled. An `internal` declaration
- * of another module is not accessible.
+ * Returns `true` when [declaration] can be referenced from the file the
+ * checker generates. An `internal` declaration of another module is not
+ * accessible, and a Java package-private declaration is accessible only
+ * from the package of that file.
  */
-internal fun KSDeclaration.isAccessibleFromGeneratedCode(): Boolean = when (getVisibility()) {
-    Visibility.PRIVATE, Visibility.PROTECTED, Visibility.LOCAL -> false
-    Visibility.INTERNAL -> isDeclaredInThisModule()
-    else -> true
-}
+internal fun Checker.isAccessibleFromGeneratedCode(declaration: KSDeclaration): Boolean =
+    when (declaration.getVisibility()) {
+        Visibility.PRIVATE, Visibility.PROTECTED, Visibility.LOCAL -> false
+        Visibility.INTERNAL -> declaration.isDeclaredInThisModule()
+        Visibility.JAVA_PACKAGE -> declaration.packageName.asString() == generatedPackage
+        else -> true
+    }
 
 internal fun KSAnnotation.string(name: String): String? =
     arguments.firstOrNull { it.name?.asString() == name }?.value as? String

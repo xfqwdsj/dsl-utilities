@@ -97,10 +97,10 @@ internal fun DslProcessor.reserveGeneratedNames(
             ?.takeIf { declaration ->
                 declaration.packageName.asString() == packageName &&
                         declaration.isDeclaredInThisModule() &&
-                        declaration.isAccessibleFromGeneratedCode()
+                        checker.isAccessibleFromGeneratedCode(declaration)
             }
             ?.getConstructors()
-            ?.filter { constructor -> constructor.isAccessibleFromGeneratedCode() }
+            ?.filter { constructor -> checker.isAccessibleFromGeneratedCode(constructor) }
             .orEmpty()
         val existing = existingFunctions.any { matchesSignature(it, signature, checker, resolver) } ||
                 existingConstructors.any { matchesSignature(it, signature, checker, resolver) }

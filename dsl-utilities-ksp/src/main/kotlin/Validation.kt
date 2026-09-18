@@ -1,7 +1,6 @@
 package top.ltfan.dslutilities.ksp
 
 import com.google.devtools.ksp.getConstructors
-import com.google.devtools.ksp.getVisibility
 import com.google.devtools.ksp.symbol.*
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ksp.toClassName
@@ -119,7 +118,7 @@ internal fun Checker.instantiation(
     }
     var containingDeclaration: KSDeclaration? = declaration
     while (containingDeclaration != null) {
-        if (!containingDeclaration.isAccessibleFromGeneratedCode()) {
+        if (!isAccessibleFromGeneratedCode(containingDeclaration)) {
             report(property, "The $role of property $propertyName is not visible from generated code.")
             return null
         }
@@ -139,12 +138,8 @@ internal fun Checker.instantiation(
                 return null
             }
             val callable = declaration.getConstructors().any { constructor ->
-                val visibility = constructor.getVisibility()
                 constructor.parameters.all { it.hasDefault || it.isVararg } &&
-                        visibility != Visibility.PRIVATE &&
-                        visibility != Visibility.PROTECTED &&
-                        visibility != Visibility.LOCAL &&
-                        (visibility != Visibility.INTERNAL || declaration.isDeclaredInThisModule())
+                        isAccessibleFromGeneratedCode(constructor)
             }
             if (callable) Instantiation(declaration.toClassName(), construct = true) else {
                 report(
