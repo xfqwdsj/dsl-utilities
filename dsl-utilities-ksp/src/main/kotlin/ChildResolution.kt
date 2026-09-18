@@ -25,6 +25,11 @@ internal fun DslProcessor.childScope(
         checker.report(function, "@DslChild function $name must not declare type parameters.")
         return null
     }
+    // KSP's symbol API does not expose a `context(...)` clause and KotlinPoet
+    // cannot render one, so a function that requires context parameters reads
+    // like one without them and the generated override omits the requirement,
+    // leaving the builder unable to implement the function. Support for
+    // context parameters starts here.
     val functionReturnType = function.returnType?.resolve()
         ?.let { checker.expandAliases(checker.substituteType(it, environment)) }
     if (functionReturnType?.isError == true) {
