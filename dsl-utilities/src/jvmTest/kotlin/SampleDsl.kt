@@ -1200,6 +1200,27 @@ interface ConcreteMemberExtensions {
     fun String.describe(): String = "described"
 }
 
+@Suppress("unused")
+interface PrivateResultMembers {
+    private val name: String get() = "private"
+
+    private fun component1(): String = "private"
+}
+
+@DslBuilder(supertype = PrivateResultMembers::class, resultName = "PrivateResultValue")
+interface PrivateResultMembersDsl {
+    val name: String
+}
+
+@DslBuilder
+@Suppress("unused")
+interface PrivateBuildHelperDsl {
+    @DslValue(initial = "1")
+    var value: Int
+
+    private fun build(): String = "helper"
+}
+
 @DslBuilder(supertype = ConcreteMemberExtensions::class)
 interface ConcreteMemberExtensionDsl {
     val name: String

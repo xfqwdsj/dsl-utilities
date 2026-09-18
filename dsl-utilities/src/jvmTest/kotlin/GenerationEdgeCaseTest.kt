@@ -5,6 +5,12 @@ import kotlin.test.*
 
 class GenerationEdgeCaseTest {
     @Test
+    fun `private interface helpers do not affect generated members`() {
+        assertEquals("ok", buildPrivateResultMembers(name = "ok").name)
+        assertEquals(1, buildPrivateBuildHelper { }.value)
+    }
+
+    @Test
     fun `escaped and reserved required names generate valid entry points`() {
         val result = buildReservedNames(`when` = "now", block = "body", builder = "factory")
 
