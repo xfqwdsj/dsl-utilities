@@ -19,7 +19,8 @@ internal fun Checker.immutableListType(elementType: KSType): KSType? {
 }
 
 /**
- * Returns an overload key after applying the declaring type's generic
+ * Returns an overload key of the function name, its extension receiver and
+ * its parameter types, after applying the declaring type's generic
  * environment.
  */
 internal fun Checker.functionSignature(
@@ -30,7 +31,11 @@ internal fun Checker.functionSignature(
         val type = substituteType(parameter.type.resolve(), environment)
         typeNameOrNull(type)?.toString() ?: type.toString()
     }
-    return "${function.simpleName.asString()}($parameters)"
+    val receiver = function.extensionReceiver?.let { reference ->
+        val type = substituteType(reference.resolve(), environment)
+        typeNameOrNull(type)?.toString() ?: type.toString()
+    }.orEmpty()
+    return "${function.simpleName.asString()}($receiver|$parameters)"
 }
 
 /**
