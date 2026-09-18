@@ -310,6 +310,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
             }
             val name = function.simpleName.asString()
             val componentIndex = name.removePrefix("component").toIntOrNull()
+                ?.takeIf { name == "component$it" }
             val parameters = function.parameters.map { parameter ->
                 checker.substituteType(parameter.type.resolve(), member.environment)
             }
