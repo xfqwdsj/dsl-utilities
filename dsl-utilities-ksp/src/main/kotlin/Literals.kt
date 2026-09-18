@@ -151,9 +151,9 @@ internal fun escapeCharLiteral(character: Char): String = when (character) {
 
 /**
  * The character categories that [escapeCharLiteral] and
- * [escapedStringLiteral] escape: control and unassigned characters,
- * surrogates that a UTF-8 file cannot carry, and the invisible format and
- * separator characters.
+ * [escapedStringLiteral] escape: control, unassigned and private-use
+ * characters, surrogates that a UTF-8 file cannot carry, and the invisible
+ * format and separator characters.
  */
 private val escapedCharacterTypes = setOf(
     Character.CONTROL.toInt(),

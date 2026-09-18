@@ -371,6 +371,8 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
             names.builderName,
         )
     } catch (_: FileAlreadyExistsException) {
+        // Another processor can create the same output path first; report
+        // the conflict as a diagnostic instead of letting the build crash.
         val qualifiedName = if (packageName.isEmpty()) names.builderName else "$packageName.${names.builderName}"
         checker.report(spec, "Generated type $qualifiedName is also produced by another declaration.")
         return handled(checker)

@@ -174,11 +174,11 @@ internal fun Checker.classifierTypeName(
 
 /**
  * Returns [parameterized] with [arguments] applied. An inner class of a
- * generic class needs the enclosing type qualifiers of its receivers, and
- * the arguments of a type list the declaration's own arguments first and
- * the enclosing class's arguments after them, so the enclosing declarations
- * restore the qualifiers that the raw class name loses. Reports and returns
- * `null` when the arguments do not line up with that chain.
+ * generic class renders with its enclosing type qualifiers, and KSP lists a
+ * type's own arguments first and the enclosing class's arguments after
+ * them, so the parameterized class name is rebuilt from the enclosing
+ * declarations. Reports and returns `null` when the arguments do not line
+ * up with that chain.
  */
 private fun Checker.innerClassTypeName(
     symbol: KSNode,
