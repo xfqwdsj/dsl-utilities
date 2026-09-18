@@ -1,65 +1,36 @@
 import com.vanniktech.maven.publish.JavadocJar
-import com.vanniktech.maven.publish.KotlinMultiplatform
+import com.vanniktech.maven.publish.KotlinJvm
 import org.jetbrains.dokka.gradle.engine.parameters.VisibilityModifier
-import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.ksp)
+    alias(libs.plugins.kotlinJvm)
     alias(libs.plugins.dokka)
     alias(libs.plugins.mavenPublish)
     signing
 }
 
-kotlin {
-    explicitApi()
-
-    jvm {
-        compilerOptions {
-            jvmTarget = JvmTarget.JVM_1_8
-        }
-    }
-    macosArm64()
-    iosSimulatorArm64()
-    iosX64()
-    iosArm64()
-    linuxX64()
-    linuxArm64()
-    watchosSimulatorArm64()
-    watchosArm32()
-    watchosArm64()
-    watchosDeviceArm64()
-    tvosSimulatorArm64()
-    tvosArm64()
-    androidNativeX64()
-    androidNativeX86()
-    androidNativeArm64()
-    androidNativeArm32()
-    mingwX64()
-    js {
-        browser()
-        nodejs()
-    }
-    @OptIn(ExperimentalWasmDsl::class) wasmJs {
-        browser()
-        nodejs()
-        d8()
-    }
-
-    applyDefaultHierarchyTemplate()
-
-    sourceSets {
-        jvmTest {
-            dependencies {
-                implementation(kotlin("test"))
-            }
-        }
-    }
+dependencies {
+    implementation(libs.kspApi)
+    implementation(libs.kotlinpoet)
+    implementation(libs.kotlinpoet.ksp)
+    // Keeps the annotations on the classpath for Dokka KDoc links; the
+    // processor references them only by name through KSP.
+    compileOnly(project(":dsl-utilities"))
 }
 
-dependencies {
-    add("kspJvmTest", project(":dsl-utilities-ksp"))
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    // The only intended public surface is the KSP service-loader entry point,
+    // which consumers use as a binary dependency through KSP; explicit API
+    // mode would not add any guarantee, so it is deliberately not applied.
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_17
+    }
 }
 
 dokka {
@@ -107,7 +78,7 @@ mavenPublishing {
     }
 
     configure(
-        KotlinMultiplatform(
+        KotlinJvm(
             javadocJar = JavadocJar.Dokka(tasks.dokkaGeneratePublicationHtml),
         )
     )

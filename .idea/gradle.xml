@@ -9,6 +9,7 @@
           <set>
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/dsl-utilities" />
+            <option value="$PROJECT_DIR$/dsl-utilities-ksp" />
           </set>
         </option>
       </GradleProjectSettings>
