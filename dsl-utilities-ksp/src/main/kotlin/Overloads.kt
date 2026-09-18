@@ -6,15 +6,19 @@ import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 
 /**
- * Reports generated declaration collisions before opening an output file,
- * keeping invalid custom or derived names as KSP diagnostics instead of
- * file-creation failures or later redeclaration errors. Declarations
- * already present in the specification's package are reserved as well,
- * because generated functions and extension properties share the
- * package-level scope with them. A generated class constructor conflicts
- * with a same-named package function that declares the same parameter
- * types, and a generated function conflicts with the constructor of a
- * same-named package class; both directions use exact signature matches.
+ * Reports generated declaration collisions before opening an output
+ * file, keeping invalid custom or derived names as KSP diagnostics
+ * instead of file-creation failures or later redeclaration errors.
+ * Declarations already present in the specification's package are
+ * reserved as well, because generated functions and extension
+ * properties share the package-level scope with them. A generated
+ * class constructor conflicts with a same-named package function that
+ * declares the same parameter types, and a generated function conflicts
+ * with the constructor of a same-named package class; both directions
+ * use exact signature matches. A generated function whose trailing
+ * configuration block is optional also conflicts with a same-named
+ * declaration that declares only the parameters before that block,
+ * because a call that omits the block is applicable to both declarations.
  *
  * @param constructorTypes the parameter types of the generated result
  *   constructor in order; `null` marks a property whose generated result
@@ -79,31 +83,43 @@ internal fun DslProcessor.reserveGeneratedNames(
     }
 
     val reservedFunctions = mutableListOf<Pair<String, Pair<String, GeneratedSignature>>>()
-    fun reserveFunction(name: String, signature: GeneratedSignature) {
+    fun reserveFunction(name: String, signature: GeneratedSignature, optionalBlock: Boolean) {
         val qualifiedName = qualified(name)
-        val existing = resolver.getFunctionDeclarationsByName(
+        val existingFunctions = resolver.getFunctionDeclarationsByName(
             resolver.getKSNameFromString(qualifiedName),
             includeTopLevel = true,
-        ).any { function ->
+        ).filter { function ->
             function.parentDeclaration == null &&
                     function.isDeclaredInThisModule() &&
-                    function.packageName.asString() == packageName &&
-                    matchesSignature(function, signature, checker, resolver)
-        } || resolver.getClassDeclarationByName(resolver.getKSNameFromString(qualifiedName))?.let { declaration ->
-            declaration.packageName.asString() == packageName &&
-                    declaration.isDeclaredInThisModule() &&
-                    declaration.isAccessibleFromGeneratedCode() &&
-                    declaration.getConstructors().any { constructor ->
-                        constructor.isAccessibleFromGeneratedCode() &&
-                                matchesSignature(constructor, signature, checker, resolver)
-                    }
-        } == true
+                    function.packageName.asString() == packageName
+        }
+        val existingConstructors = resolver.getClassDeclarationByName(resolver.getKSNameFromString(qualifiedName))
+            ?.takeIf { declaration ->
+                declaration.packageName.asString() == packageName &&
+                        declaration.isDeclaredInThisModule() &&
+                        declaration.isAccessibleFromGeneratedCode()
+            }
+            ?.getConstructors()
+            ?.filter { constructor -> constructor.isAccessibleFromGeneratedCode() }
+            .orEmpty()
+        val existing = existingFunctions.any { matchesSignature(it, signature, checker, resolver) } ||
+                existingConstructors.any { matchesSignature(it, signature, checker, resolver) }
+        val existingPrefix = optionalBlock && (
+                existingFunctions.any { matchesOptionalBlockPrefix(it, signature, checker) } ||
+                        existingConstructors.any { matchesOptionalBlockPrefix(it, signature, checker) }
+                )
         val reservedBy = generatedFunctionOwners[qualifiedName]
             ?.firstOrNull { (_, reserved) -> sameSignature(reserved, signature, checker) }
             ?.first
         when {
             existing ->
                 checker.report(spec, "Generated function $qualifiedName conflicts with an existing declaration.")
+
+            existingPrefix ->
+                checker.report(
+                    spec,
+                    "Generated function $qualifiedName conflicts with an existing declaration that accepts the same parameters."
+                )
 
             reservedBy != null && reservedBy != owner ->
                 checker.report(spec, "Generated function $qualifiedName is also produced by $reservedBy.")
@@ -113,13 +129,18 @@ internal fun DslProcessor.reserveGeneratedNames(
 
     val specType = spec.asType(emptyList())
     if (names.generateFunction) {
-        reserveFunction(names.functionName, GeneratedSignature(null, requiredProperties.map { it.type }, specType))
+        reserveFunction(
+            names.functionName,
+            GeneratedSignature(null, requiredProperties.map { it.type }, specType),
+            optionalBlock = true,
+        )
     }
     for (property in listProperties) {
         for (child in property.children) {
             reserveFunction(
                 child.functionName,
                 GeneratedSignature(specType, child.required.map { it.type }, child.specType),
+                optionalBlock = !child.requiresConfiguration,
             )
             if (child.required.isEmpty() && !child.requiresConfiguration) {
                 val shorthandKey = "$specQualifiedName.${child.functionName}"
@@ -202,6 +223,26 @@ internal fun matchesSignature(
     val blockReturnType = blockArguments[1].type?.resolve() ?: return false
     return checker.sameType(blockReceiver, signature.blockReceiver) &&
             checker.sameType(blockReturnType, resolver.builtIns.unitType)
+}
+
+/**
+ * Returns `true` when [function] declares exactly the parameters that
+ * the generated [signature] declares before its trailing configuration
+ * block, so a call that omits the block is applicable to both declarations
+ * and overload resolution decides between them. A generic declaration
+ * cannot take precedence over the non-generic generated function.
+ */
+internal fun matchesOptionalBlockPrefix(
+    function: KSFunctionDeclaration,
+    signature: GeneratedSignature,
+    checker: Checker,
+): Boolean {
+    if (!checker.sameType(function.extensionReceiver?.resolve(), signature.receiver)) return false
+    if (function.typeParameters.isNotEmpty()) return false
+    if (function.parameters.size != signature.parameters.size) return false
+    return function.parameters.withIndex().all { (index, parameter) ->
+        checker.sameType(parameter.type.resolve(), signature.parameters[index])
+    }
 }
 
 /**
