@@ -1,5 +1,6 @@
 package top.ltfan.dslutilities.ksp
 
+import com.google.devtools.ksp.getConstructors
 import com.google.devtools.ksp.getVisibility
 import com.google.devtools.ksp.symbol.*
 import com.squareup.kotlinpoet.*
@@ -137,13 +138,14 @@ internal fun Checker.instantiation(
                 report(property, "The $role of property $propertyName must be a concrete, non-inner class.")
                 return null
             }
-            val constructor = declaration.primaryConstructor
-            val constructorVisibility = constructor?.getVisibility()
-            val callable = constructor != null &&
-                    constructor.parameters.all { it.hasDefault || it.isVararg } &&
-                    constructorVisibility != Visibility.PRIVATE &&
-                    constructorVisibility != Visibility.PROTECTED &&
-                    (constructorVisibility != Visibility.INTERNAL || declaration.isDeclaredInThisModule())
+            val callable = declaration.getConstructors().any { constructor ->
+                val visibility = constructor.getVisibility()
+                constructor.parameters.all { it.hasDefault || it.isVararg } &&
+                        visibility != Visibility.PRIVATE &&
+                        visibility != Visibility.PROTECTED &&
+                        visibility != Visibility.LOCAL &&
+                        (visibility != Visibility.INTERNAL || declaration.isDeclaredInThisModule())
+            }
             if (callable) Instantiation(declaration.toClassName(), construct = true) else {
                 report(
                     property,
