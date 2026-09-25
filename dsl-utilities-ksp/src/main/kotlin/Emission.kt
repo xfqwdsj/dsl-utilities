@@ -62,7 +62,7 @@ internal fun builderType(
     }
     for (property in listProperties) {
         val initializer = property.hook?.let {
-            CodeBlock.of("%T(%L)", HOOKED_DSL_LIST, it.code(context))
+            CodeBlock.of("%L(%L)", context.expression(HOOKED_DSL_LIST), it.code(context))
         } ?: CodeBlock.of("%L()", context.member(MUTABLE_LIST_OF))
         builder.addProperty(
             PropertySpec.builder(

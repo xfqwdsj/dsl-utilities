@@ -149,7 +149,7 @@ internal fun Checker.initialProvider(
         )
         return null
     }
-    return instantiation(property, propertyName, declaration, "initial provider")
+    return singletonInstantiation(property, propertyName, declaration, "initial provider")
 }
 
 internal fun Checker.hook(
@@ -184,7 +184,20 @@ internal fun Checker.hook(
         report(property, "The hook of property $propertyName does not accept the property values.")
         return null
     }
-    return instantiation(property, propertyName, declaration, "hook")
+    return singletonInstantiation(property, propertyName, declaration, "hook")
+}
+
+private fun Checker.singletonInstantiation(
+    property: KSPropertyDeclaration,
+    propertyName: String,
+    declaration: KSClassDeclaration,
+    role: String,
+): Instantiation? {
+    if (!declaration.isCompanionObject && declaration.classKind != ClassKind.OBJECT) {
+        report(property, "The $role of property $propertyName must be an object or companion object.")
+        return null
+    }
+    return instantiation(property, propertyName, declaration, role)
 }
 
 internal fun Checker.instantiation(

@@ -101,6 +101,7 @@ person.tags                 // read-only list
 | `@DslList var p: MutableList<T>`  | DSL list, exposed as a read-only `List` in the result           |
 | `@DslList(hook = …::class)`       | Runs hooks before list access and element writes                |
 
+Provider and hook implementations must be declared as an `object` or companion object.
 Providers implement `DslInitialProvider<T>` and can return values of any property type.
 Validators implement `DslValidator<T>`; mappers implement `DslMapper<I, O>`.
 Class validators and mappers produce a deprecation warning in 2.x; declare them as `object`. Class support will be

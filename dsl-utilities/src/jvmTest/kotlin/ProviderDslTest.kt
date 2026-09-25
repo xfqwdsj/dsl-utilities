@@ -24,12 +24,25 @@ internal object NextValue : DslInitialProvider<Int> {
 }
 
 @DslBuilder
+internal interface HookedDslListChildDsl
+
+@DslBuilder
 internal interface ProviderDsl {
     @DslValue(provider = NextValue::class, hook = PositiveValueHook::class)
     var value: Int
 
     @DslList(hook = PositiveListHook::class)
     var values: MutableList<Int>
+}
+
+@Suppress("TestFunctionName")
+@DslBuilder
+internal interface HookedListNameCollisionDsl {
+    @DslList(hook = PositiveListHook::class)
+    var values: MutableList<Int>
+
+    @DslChild
+    fun HookedDslList(block: HookedDslListChildDsl.() -> Unit = {})
 }
 
 class ProviderDslTest {
