@@ -16,8 +16,8 @@ import kotlin.reflect.KClass
  * - Mutable properties (`var`) annotated with [DslValue] or [DslList] are
  *   set inside the DSL block. A nullable [DslValue] property is optional
  *   and defaults to `null`; a non-nullable [DslValue] property defaults to
- *   the [DslValue.initial] constant, and a [DslList] property starts
- *   empty.
+ *   the [DslValue.initial] constant or a fresh value from
+ *   [DslValue.provider], and a [DslList] property starts empty.
  * - Validation expressions are emitted inline into the generated accessors
  *   and into the generated `build` function, with property names as
  *   compile-time string constants.
@@ -75,6 +75,11 @@ public annotation class DslBuilder(
  *   when the builder is created. Trailing newlines of a [String] value are
  *   not preserved when the literal is emitted, unless the value contains
  *   an unpaired surrogate, which is rendered verbatim.
+ * @param provider A [DslInitialProvider] whose `provide` function is
+ *   called once for each builder. It can initialize properties of any type
+ *   and cannot be combined with [initial].
+ * @param hook A [DslValueHook] invoked before property access and
+ *   assignment.
  * @param validator A [DslValidator] object or class. The generated setter
  *   calls `require` with this validator before storing the value. When
  *   unset, the property accepts every value.
@@ -89,6 +94,8 @@ public annotation class DslBuilder(
 @Retention(AnnotationRetention.BINARY)
 public annotation class DslValue(
     val initial: String = "",
+    val provider: KClass<*> = Unit::class,
+    val hook: KClass<*> = Unit::class,
     val validator: KClass<*> = Unit::class,
     val mapper: KClass<*> = Unit::class,
     val message: String = "",
@@ -114,11 +121,14 @@ public annotation class DslValue(
  * @param message The message passed to `require` when element validation
  *   fails. When empty, a message containing the property name is
  *   generated.
+ * @param hook A [DslListHook] invoked before list access and element
+ *   writes.
  */
 @Target(AnnotationTarget.PROPERTY)
 @Retention(AnnotationRetention.BINARY)
 public annotation class DslList(
     val validator: KClass<*> = Unit::class,
+    val hook: KClass<*> = Unit::class,
     val children: Array<KClass<*>> = [],
     val message: String = "",
 )

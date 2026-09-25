@@ -2,7 +2,7 @@ package top.ltfan.dslutilities.ksp
 
 import com.google.devtools.ksp.getConstructors
 import com.google.devtools.ksp.symbol.*
-import com.squareup.kotlinpoet.*
+import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.ksp.toClassName
 
 /**
@@ -46,6 +46,10 @@ internal fun Checker.validator(
         return null
     }
     val prefix = instantiation(property, propertyName, declaration, "validator") ?: return null
+    if (prefix.construct) logger.warn(
+        "Class validators are deprecated; declare the validator as an object. Class support will be removed in 3.0.",
+        property
+    )
     return prefix
 }
 
@@ -102,8 +106,85 @@ internal fun Checker.mapper(
         return null
     }
     val target = instantiation(property, propertyName, declaration, "mapper") ?: return null
+    if (target.construct) logger.warn(
+        "Class mappers are deprecated; declare the mapper as an object. Class support will be removed in 3.0.",
+        property
+    )
     val storageTypeName = renderTypeName(property, storedType) ?: return null
     return MapperInfo(target, storageTypeName, storedType)
+}
+
+/** Resolves a provider whose result can initialize the declared property. */
+internal fun Checker.initialProvider(
+    property: KSPropertyDeclaration,
+    propertyName: String,
+    providerType: KSType?,
+    valueType: KSType,
+): Instantiation? {
+    if (providerType == null) return null
+    val resolvedProvider = expandAliases(providerType)
+    if (resolvedProvider.isUnit()) return null
+    if (resolvedProvider.isError) {
+        reportUnresolved(property, "The initial provider of property $propertyName is not resolvable yet.")
+        return null
+    }
+    val declaration = resolvedProvider.declaration as? KSClassDeclaration ?: run {
+        report(property, "The initial provider of property $propertyName must be a class or object.")
+        return null
+    }
+    if (declaration.typeParameters.isNotEmpty()) {
+        report(property, "The initial provider of property $propertyName must not declare type parameters.")
+        return null
+    }
+    val arguments = findSuperTypeArguments(declaration, property, DSL_INITIAL_PROVIDER_NAME)
+    if (arguments == null) {
+        report(property, "The initial provider of property $propertyName must implement DslInitialProvider.")
+        return null
+    }
+    val providedType = arguments.singleOrNull()?.let { expandAliases(it) }
+    if (providedType == null || !valueType.isAssignableFrom(providedType)) {
+        report(
+            property,
+            "The initial provider of property $propertyName returns a type that is not assignable to the property."
+        )
+        return null
+    }
+    return instantiation(property, propertyName, declaration, "initial provider")
+}
+
+internal fun Checker.hook(
+    property: KSPropertyDeclaration,
+    propertyName: String,
+    hookType: KSType?,
+    valueType: KSType,
+    contractName: String,
+): Instantiation? {
+    if (hookType == null) return null
+    val resolvedHook = expandAliases(hookType)
+    if (resolvedHook.isUnit()) return null
+    if (resolvedHook.isError) {
+        reportUnresolved(property, "The hook of property $propertyName is not resolvable yet.")
+        return null
+    }
+    val declaration = resolvedHook.declaration as? KSClassDeclaration ?: run {
+        report(property, "The hook of property $propertyName must be a class or object.")
+        return null
+    }
+    if (declaration.typeParameters.isNotEmpty()) {
+        report(property, "The hook of property $propertyName must not declare type parameters.")
+        return null
+    }
+    val arguments = findSuperTypeArguments(declaration, property, contractName)
+    if (arguments == null) {
+        report(property, "The hook of property $propertyName must implement ${contractName.substringAfterLast('.')}.")
+        return null
+    }
+    val acceptedType = arguments.singleOrNull()?.let { expandAliases(it) }
+    if (acceptedType == null || !acceptedType.isAssignableFrom(valueType)) {
+        report(property, "The hook of property $propertyName does not accept the property values.")
+        return null
+    }
+    return instantiation(property, propertyName, declaration, "hook")
 }
 
 internal fun Checker.instantiation(

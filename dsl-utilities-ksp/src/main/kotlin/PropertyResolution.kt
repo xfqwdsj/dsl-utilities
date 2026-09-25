@@ -1,10 +1,11 @@
 package top.ltfan.dslutilities.ksp
 
-import com.google.devtools.ksp.getDeclaredProperties
 import com.google.devtools.ksp.getAllSuperTypes
+import com.google.devtools.ksp.getDeclaredProperties
 import com.google.devtools.ksp.isAbstract
 import com.google.devtools.ksp.symbol.*
-import com.squareup.kotlinpoet.*
+import com.squareup.kotlinpoet.CodeBlock
+import com.squareup.kotlinpoet.MUTABLE_LIST
 
 internal fun ValueProperty.nameField(): String = fieldName
 
@@ -45,9 +46,19 @@ internal fun requiredProperty(
         checker.report(property, "@DslValue.initial applies to var properties; $name is a val.")
         return null
     }
+    val providerType = annotation?.type("provider")
+    if (providerType != null && !providerType.isUnit()) {
+        checker.report(property, "@DslValue.provider applies to var properties; $name is a val.")
+        return null
+    }
     val mapperType = annotation?.type("mapper")
     if (mapperType != null && !mapperType.isUnit()) {
         checker.report(property, "@DslValue.mapper applies to var properties; $name is a val.")
+        return null
+    }
+    val hookType = annotation?.type("hook")
+    if (hookType != null && !hookType.isUnit()) {
+        checker.report(property, "@DslValue.hook applies to var properties; $name is a val.")
         return null
     }
     val validator = checker.validator(property, name, annotation?.type("validator"), resolvedType)
@@ -82,8 +93,14 @@ internal fun valueProperty(
     val mapper = checker.mapper(property, name, annotation.type("mapper"), resolvedType)
     if (checker.diagnosticCount != diagnostics) return null
     val initial = annotation.providedString("initial")
+    val provider = checker.initialProvider(property, name, annotation.type("provider"), resolvedType)
+    if (checker.diagnosticCount != diagnostics) return null
+    if (initial != null && provider != null) {
+        checker.report(property, "@DslValue.initial and @DslValue.provider are mutually exclusive for property $name.")
+        return null
+    }
     when (initial) {
-        null if !resolvedType.isMarkedNullable -> {
+        null if provider == null && !resolvedType.isMarkedNullable -> {
             checker.report(
                 property,
                 "Property $name is non-nullable and has no initial value; declare it as a val to make it required, declare it with a nullable type, or provide @DslValue.initial."
@@ -91,7 +108,7 @@ internal fun valueProperty(
             return null
         }
 
-        null if mapper != null -> {
+        null if provider == null && mapper != null -> {
             checker.report(
                 property,
                 "Property $name is nullable and has a mapper; provide @DslValue.initial so the stored value is always present."
@@ -99,7 +116,9 @@ internal fun valueProperty(
             return null
         }
     }
-    val initialValue = if (initial == null) {
+    val initialValue = if (provider != null) {
+        null
+    } else if (initial == null) {
         CodeBlock.of("null")
     } else {
         checker.literal(property, name, initial, resolvedType) ?: return null
@@ -110,6 +129,7 @@ internal fun valueProperty(
         annotation.type("validator"),
         mapper?.storedType ?: resolvedType,
     )
+    val hook = checker.hook(property, name, annotation.type("hook"), resolvedType, DSL_VALUE_HOOK_NAME)
     if (checker.diagnosticCount != diagnostics) return null
     return ValueProperty(
         name = name,
@@ -117,7 +137,9 @@ internal fun valueProperty(
         type = resolvedType,
         storageTypeName = mapper?.storageTypeName ?: typeName,
         initialValue = initialValue,
+        initialProvider = provider,
         mapper = mapper?.target,
+        hook = hook,
         validator = validator,
         message = checker.message(annotation, name),
     )
@@ -178,6 +200,7 @@ internal fun DslProcessor.listProperty(
     val listTypeName = checker.renderTypeName(property, type, declarationType) ?: return null
     val resolvedElementType = checker.expandAliases(elementType)
     val validator = checker.validator(property, name, annotation.type("validator"), resolvedElementType)
+    val hook = checker.hook(property, name, annotation.type("hook"), resolvedElementType, DSL_LIST_HOOK_NAME)
     if (checker.diagnosticCount != diagnostics) return null
 
     val children = mutableListOf<ChildSpec>()
@@ -212,6 +235,7 @@ internal fun DslProcessor.listProperty(
         elementTypeName,
         resolvedElementType,
         validator,
+        hook,
         checker.message(annotation, name),
         children,
     )
