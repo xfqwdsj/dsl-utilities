@@ -1,6 +1,7 @@
 package top.ltfan.dslutilities.ksp
 
-import com.squareup.kotlinpoet.*
+import com.squareup.kotlinpoet.ClassName
+import com.squareup.kotlinpoet.MemberName
 
 internal const val DSL_BUILDER_ANNOTATION = "top.ltfan.dslutilities.DslBuilder"
 internal const val DSL_VALUE_ANNOTATION = "top.ltfan.dslutilities.DslValue"
@@ -8,6 +9,10 @@ internal const val DSL_LIST_ANNOTATION = "top.ltfan.dslutilities.DslList"
 internal const val DSL_CHILD_ANNOTATION = "top.ltfan.dslutilities.DslChild"
 internal const val DSL_VALIDATOR_NAME = "top.ltfan.dslutilities.DslValidator"
 internal const val DSL_MAPPER_NAME = "top.ltfan.dslutilities.DslMapper"
+internal const val DSL_INITIAL_PROVIDER_NAME = "top.ltfan.dslutilities.DslInitialProvider"
+internal const val DSL_VALUE_HOOK_NAME = "top.ltfan.dslutilities.DslValueHook"
+internal const val DSL_LIST_HOOK_NAME = "top.ltfan.dslutilities.DslListHook"
+internal val HOOKED_DSL_LIST = ClassName("top.ltfan.dslutilities", "HookedDslList")
 
 /** Prefix of the compiler-internal annotations that are never copied. */
 internal const val KOTLIN_INTERNAL_PREFIX = "kotlin.internal."

@@ -94,11 +94,22 @@ person.tags                 // read-only list
 | `val name: String`                | Required value, a parameter of the generated build function     |
 | `@DslValue var p: String`         | DSL value with a compile-time `initial` constant                |
 | `@DslValue var p: String?`        | Optional DSL value defaulting to `null`                         |
+| `@DslValue(provider = …::class)`  | Calls a provider once for each new builder                      |
+| `@DslValue(hook = …::class)`      | Runs hooks before property reads and writes                     |
 | `@DslValue(validator = …::class)` | Value accepted only when the validator passes                   |
 | `@DslValue(mapper = …::class)`    | Value transformed between the declared type and the stored type |
 | `@DslList var p: MutableList<T>`  | DSL list, exposed as a read-only `List` in the result           |
+| `@DslList(hook = …::class)`       | Runs hooks before list access and element writes                |
 
+Provider and hook implementations must be declared as an `object` or companion object.
+Providers implement `DslInitialProvider<T>` and can return values of any property type.
 Validators implement `DslValidator<T>`; mappers implement `DslMapper<I, O>`.
+Class validators and mappers produce a deprecation warning in 2.x; declare them as `object`. Class support will be
+removed in 3.0.
+
+Value hooks implement `DslValueHook<T>`. List hooks implement `DslListHook<T>`;
+the generated builder wraps a hooked list so direct `add` and indexed
+assignments also invoke `beforeSet`.
 
 ## Composition
 
@@ -232,7 +243,7 @@ processor to the consuming module; the generated builders, results, and
 
 ## Modules
 
-- `dsl-utilities` — the annotations, `DslValidator`, and `DslMapper`, with
+- `dsl-utilities` — the annotations, providers, hooks, validators, and mappers, with
   support for all Kotlin multiplatform targets.
 - `dsl-utilities-ksp` — the KSP processor generating the builders.
 

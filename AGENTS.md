@@ -8,8 +8,9 @@ test counts — belong in the code, and this file points to the source instead o
 
 ## What this is
 
-- Kotlin Multiplatform library `dsl-utilities` (the annotation-driven DSL API and its validator/mapper contracts) plus
-  the JVM KSP processor `dsl-utilities-ksp`, which generates builders, result data classes and `build…` functions.
+- Kotlin Multiplatform library `dsl-utilities` (the annotation-driven DSL API, provider and hook contracts, and
+  validator/mapper contracts) plus the JVM KSP processor `dsl-utilities-ksp`, which generates builders, result data
+  classes and `build…` functions.
 - Code generation is built on KotlinPoet and KSP; current tool versions live in `gradle/libs.versions.toml`.
 - The processor lives under `dsl-utilities-ksp/src/main/kotlin` as focused files rather than one file; keep it that way.
   Pipeline: `DslProcessor.process` → `Generation.generate` phases (spec members → child scopes → result-supertype

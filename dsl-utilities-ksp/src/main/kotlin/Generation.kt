@@ -222,10 +222,12 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
     if (!checker.valid) return handled(checker)
     val supertypeTypeName = resultSupertype?.typeName
     val supertypeOverrides = mutableSetOf<String>()
-    val resultProperties = requiredProperties.map { it.name to it.typeName } +
-            valueProperties.map { it.name to it.typeName } +
-            listProperties.map { it.name to LIST.parameterizedBy(it.elementTypeName) } +
-            childScopes.map { it.name to it.child.resultType }
+    val resultProperties = buildList {
+        requiredProperties.forEach { add(it.name to it.typeName) }
+        valueProperties.forEach { add(it.name to it.typeName) }
+        listProperties.forEach { add(it.name to LIST.parameterizedBy(it.elementTypeName)) }
+        childScopes.forEach { add(it.name to it.child.resultType) }
+    }
     val resolvedResultPropertyTypes = buildMap {
         for (property in requiredProperties) put(property.name, property.type)
         for (property in valueProperties) put(property.name, property.type)
@@ -475,12 +477,12 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
             add(supertype)
             addAll(
                 hierarchy.allProperties(supertype)
-                .filter { it.declaration.getVisibility() != Visibility.PRIVATE }
-                .map { it.declaration })
+                    .filter { it.declaration.getVisibility() != Visibility.PRIVATE }
+                    .map { it.declaration })
             addAll(
                 hierarchy.allFunctions(supertype)
-                .filter { it.declaration.getVisibility() != Visibility.PRIVATE }
-                .map { it.declaration })
+                    .filter { it.declaration.getVisibility() != Visibility.PRIVATE }
+                    .map { it.declaration })
         }
     }
     val fileSpec = FileSpec.builder(packageName, names.builderName)

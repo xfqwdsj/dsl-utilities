@@ -45,10 +45,13 @@ internal fun builderType(
         )
     }
     for (property in valueProperties) {
+        val initialValue = property.initialProvider?.let {
+            CodeBlock.of("%L.provide()", it.code(context))
+        } ?: requireNotNull(property.initialValue)
         val initializer = if (property.mapper != null) {
-            CodeBlock.of("%L.toStored(%L)", property.mapper.code(context), property.initialValue)
+            CodeBlock.of("%L.toStored(%L)", property.mapper.code(context), initialValue)
         } else {
-            property.initialValue
+            initialValue
         }
         builder.addProperty(
             PropertySpec.builder(property.nameField(), property.storageTypeName, KModifier.PRIVATE)
@@ -58,13 +61,17 @@ internal fun builderType(
         )
     }
     for (property in listProperties) {
+        val initializer = property.hook?.let {
+            CodeBlock.of("%L(%L)", context.expression(HOOKED_DSL_LIST), it.code(context))
+        } ?: CodeBlock.of("%L()", context.member(MUTABLE_LIST_OF))
         builder.addProperty(
             PropertySpec.builder(
                 property.nameField(),
-                MUTABLE_LIST.parameterizedBy(property.elementTypeName),
+                if (property.hook == null) MUTABLE_LIST.parameterizedBy(property.elementTypeName)
+                else HOOKED_DSL_LIST.parameterizedBy(property.elementTypeName),
                 KModifier.PRIVATE,
             )
-                .initializer(CodeBlock.of("%L()", context.member(MUTABLE_LIST_OF)))
+                .initializer(initializer)
                 .build()
         )
     }
@@ -84,6 +91,9 @@ internal fun builderType(
     for (property in valueProperties) {
         val getter = FunSpec.getterBuilder()
             .apply {
+                if (property.hook != null) {
+                    addStatement("%L.beforeAccess()", property.hook.code(context))
+                }
                 if (property.mapper == null) {
                     addStatement("return %N", property.nameField())
                 } else {
@@ -94,6 +104,9 @@ internal fun builderType(
         val setter = FunSpec.setterBuilder()
             .addParameter(VALUE_PARAMETER, property.typeName)
             .apply {
+                if (property.hook != null) {
+                    addStatement("%L.beforeSet($VALUE_PARAMETER)", property.hook.code(context))
+                }
                 if (property.mapper == null) {
                     if (property.validator != null) {
                         addStatement(
@@ -145,8 +158,14 @@ internal fun builderType(
         val setter = FunSpec.setterBuilder()
             .addParameter(VALUE_PARAMETER, property.typeName)
             .addStatement("val $SNAPSHOT = $VALUE_PARAMETER.%L()", context.member(TO_LIST))
-            .addStatement("%N.clear()", property.nameField())
-            .addStatement("%N.addAll($SNAPSHOT)", property.nameField())
+            .apply {
+                if (property.hook == null) {
+                    addStatement("%N.clear()", property.nameField())
+                    addStatement("%N.addAll($SNAPSHOT)", property.nameField())
+                } else {
+                    addStatement("%N.replaceWith($SNAPSHOT)", property.nameField())
+                }
+            }
             .build()
         builder.addProperty(
             PropertySpec.builder(
@@ -155,7 +174,10 @@ internal fun builderType(
                 KModifier.OVERRIDE
             )
                 .mutable(true)
-                .getter(FunSpec.getterBuilder().addStatement("return %N", property.nameField()).build())
+                .getter(FunSpec.getterBuilder().apply {
+                    if (property.hook != null) addStatement("%L.beforeAccess()", property.hook.code(context))
+                    addStatement("return %N", property.nameField())
+                }.build())
                 .setter(setter)
                 .build()
         )

@@ -1,7 +1,11 @@
 package top.ltfan.dslutilities.ksp
 
-import com.google.devtools.ksp.symbol.*
-import com.squareup.kotlinpoet.*
+import com.google.devtools.ksp.symbol.KSClassDeclaration
+import com.google.devtools.ksp.symbol.KSType
+import com.squareup.kotlinpoet.ClassName
+import com.squareup.kotlinpoet.CodeBlock
+import com.squareup.kotlinpoet.KModifier
+import com.squareup.kotlinpoet.TypeName
 
 internal data class MapperInfo(
     val target: Instantiation,
@@ -27,8 +31,10 @@ internal class ValueProperty(
     val typeName: TypeName,
     val type: KSType,
     val storageTypeName: TypeName,
-    val initialValue: CodeBlock,
+    val initialValue: CodeBlock?,
+    val initialProvider: Instantiation?,
     val mapper: Instantiation?,
+    val hook: Instantiation?,
     val validator: Instantiation?,
     val message: String,
 ) {
@@ -41,6 +47,7 @@ internal class ListProperty(
     val elementTypeName: TypeName,
     val elementType: KSType,
     val validator: Instantiation?,
+    val hook: Instantiation?,
     val message: String,
     val children: List<ChildSpec>,
 ) {
