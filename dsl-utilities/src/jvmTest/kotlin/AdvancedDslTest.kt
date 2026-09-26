@@ -15,6 +15,15 @@ interface RequiredValuesDsl {
     var optional: String?
 }
 
+@DslBuilder
+interface RequiredStateNameCollisionDsl {
+    @DslValue(required = true)
+    var value: String
+
+    @DslValue(initial = "false")
+    var valueFieldIsSet: Boolean
+}
+
 object CompleteRequiredValues : DslBuildHook<HookedValuesDsl> {
     var calls = 0
 
@@ -68,6 +77,16 @@ class AdvancedDslTest {
         builder.optional = null
         assertNull(builder.optional)
         assertNull(builder.build().optional)
+    }
+
+    @Test
+    fun requiredStateMarkerAvoidsDslPropertyNames() {
+        val builder = RequiredStateNameCollisionDslBuilder()
+        assertFailsWith<IllegalStateException> { builder.build() }
+        builder.value = "assigned"
+        val result = builder.build()
+        assertEquals("assigned", result.value)
+        assertEquals(false, result.valueFieldIsSet)
     }
 
     @Test
