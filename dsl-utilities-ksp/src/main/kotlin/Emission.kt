@@ -19,6 +19,7 @@ internal fun builderType(
     valueProperties: List<ValueProperty>,
     listProperties: List<ListProperty>,
     childScopes: List<ChildScope>,
+    buildHook: Instantiation?,
     context: FileContext,
 ): TypeSpec {
     val builder = TypeSpec.classBuilder(builderTypeName)
@@ -47,18 +48,28 @@ internal fun builderType(
     for (property in valueProperties) {
         val initialValue = property.initialProvider?.let {
             CodeBlock.of("%L.provide()", it.code(context))
-        } ?: requireNotNull(property.initialValue)
-        val initializer = if (property.mapper != null) {
+        } ?: property.initialValue ?: CodeBlock.of("null")
+        val initializer = if (property.mapper != null && !property.required) {
             CodeBlock.of("%L.toStored(%L)", property.mapper.code(context), initialValue)
         } else {
             initialValue
         }
         builder.addProperty(
-            PropertySpec.builder(property.nameField(), property.storageTypeName, KModifier.PRIVATE)
+            PropertySpec.builder(
+                property.nameField(),
+                if (property.required) property.storageTypeName.copy(nullable = true) else property.storageTypeName,
+                KModifier.PRIVATE,
+            )
                 .mutable(true)
                 .initializer(initializer)
                 .build()
         )
+        if (property.required) {
+            builder.addProperty(
+                PropertySpec.builder(property.isSetFieldName, BOOLEAN, KModifier.PRIVATE)
+                    .mutable(true).initializer("false").build()
+            )
+        }
     }
     for (property in listProperties) {
         val initializer = property.hook?.let {
@@ -94,10 +105,26 @@ internal fun builderType(
                 if (property.hook != null) {
                     addStatement("%L.beforeAccess()", property.hook.code(context))
                 }
+                if (property.required) {
+                    addStatement(
+                        "%L(%N) { %S }",
+                        context.member(CHECK),
+                        property.isSetFieldName,
+                        "Property ${property.name} is required.",
+                    )
+                }
                 if (property.mapper == null) {
-                    addStatement("return %N", property.nameField())
+                    if (property.required && !property.typeName.isNullable) addStatement(
+                        "return %N as %T",
+                        property.nameField(),
+                        property.typeName
+                    )
+                    else addStatement("return %N", property.nameField())
                 } else {
-                    addStatement("return %L.toValue(%N)", property.mapper.code(context), property.nameField())
+                    if (property.required) addStatement(
+                        "return %L.toValue(%N as %T)",
+                        property.mapper.code(context), property.nameField(), property.storageTypeName,
+                    ) else addStatement("return %L.toValue(%N)", property.mapper.code(context), property.nameField())
                 }
             }
             .build()
@@ -129,6 +156,7 @@ internal fun builderType(
                     }
                     addStatement("%N = $STORED_VALUE", property.nameField())
                 }
+                if (property.required) addStatement("%N = true", property.isSetFieldName)
             }
             .build()
         builder.addProperty(
@@ -141,7 +169,7 @@ internal fun builderType(
     }
 
     for (property in valueProperties) {
-        if (property.validator != null) {
+        if (property.validator != null && !property.required) {
             builder.addInitializerBlock(
                 CodeBlock.of(
                     "%L(%L.validate(%N)) { %L }\n",
@@ -207,6 +235,15 @@ internal fun builderType(
     }
 
     val buildCode = CodeBlock.builder()
+    if (buildHook != null) buildCode.addStatement("%L.beforeBuild(this)", buildHook.code(context))
+    for (property in valueProperties) {
+        if (property.required) buildCode.addStatement(
+            "%L(%N) { %S }",
+            context.member(CHECK),
+            property.isSetFieldName,
+            "Property ${property.name} is required.",
+        )
+    }
     for (property in requiredProperties) {
         if (property.validator != null) {
             buildCode.addStatement(
@@ -312,6 +349,18 @@ internal fun elementFunctions(
     val functions = mutableListOf<FunSpec>()
     val shorthands = mutableListOf<PropertySpec>()
     for (property in listProperties) {
+        val receiver = property.scopeTypeName ?: specTypeName
+        if (property.scopeTypeName != null) {
+            functions += FunSpec.builder(property.scopeName)
+                .addModifiers(parentVisibility, KModifier.INLINE)
+                .receiver(specTypeName)
+                .addParameter(
+                    BLOCK_PARAMETER,
+                    LambdaTypeName.get(receiver = receiver, returnType = UNIT),
+                )
+                .addStatement("%L(this.%N).%N()", context.expression(receiver), property.name, BLOCK_PARAMETER)
+                .build()
+        }
         for (child in property.children) {
             val scope = context.scope()
             child.required.forEach { scope.register(it.name) }
@@ -323,7 +372,7 @@ internal fun elementFunctions(
             )
             functions += FunSpec.builder(child.functionName)
                 .addModifiers(visibility, KModifier.INLINE)
-                .receiver(specTypeName)
+                .receiver(receiver)
                 .apply {
                     for (required in child.required) addParameter(requiredParameter(required))
                 }
@@ -347,12 +396,18 @@ internal fun elementFunctions(
                     arguments,
                 )
                 .addStatement("%N.invoke(%N)", blockName, childBuilderName)
-                .addStatement("this.%N.add(%N.$BUILD_FUNCTION())", property.name, childBuilderName)
+                .apply {
+                    if (property.scopeTypeName == null) {
+                        addStatement("this.%N.add(%N.$BUILD_FUNCTION())", property.name, childBuilderName)
+                    } else {
+                        addStatement("this.elements.add(%N.$BUILD_FUNCTION())", childBuilderName)
+                    }
+                }
                 .build()
             if (child.required.isEmpty() && !child.requiresConfiguration) {
                 shorthands += PropertySpec.builder(child.functionName, UNIT)
                     .addModifiers(visibility)
-                    .receiver(specTypeName)
+                    .receiver(receiver)
                     .getter(
                         FunSpec.getterBuilder()
                             .addModifiers(KModifier.INLINE)
@@ -366,6 +421,28 @@ internal fun elementFunctions(
     return ElementFunctions(functions, shorthands)
 }
 
+/** One generated receiver type per named list, even when children repeat. */
+internal fun namedListScopes(
+    visibility: KModifier,
+    listProperties: List<ListProperty>,
+): List<TypeSpec> = listProperties.mapNotNull { property ->
+    val typeName = property.scopeTypeName ?: return@mapNotNull null
+    TypeSpec.classBuilder(typeName)
+        .addModifiers(visibility)
+        .primaryConstructor(
+            FunSpec.constructorBuilder()
+                .addParameter("elements", MUTABLE_LIST.parameterizedBy(property.elementTypeName))
+                .build(),
+        )
+        .addSuperinterface(DSL_LIST_SCOPE.parameterizedBy(property.elementTypeName))
+        .addProperty(
+            PropertySpec.builder("elements", MUTABLE_LIST.parameterizedBy(property.elementTypeName), KModifier.OVERRIDE)
+                .initializer("elements")
+                .build(),
+        )
+        .build()
+}
+
 /**
  * Builds the top-level entry point that creates the builder, runs the DSL
  * block and returns the built result.
@@ -377,6 +454,7 @@ internal fun buildFunction(
     builderTypeName: ClassName,
     resultTypeName: ClassName,
     requiredProperties: List<RequiredProperty>,
+    requireConfiguration: Boolean,
     context: FileContext,
 ): FunSpec {
     val scope = context.scope()
@@ -396,7 +474,7 @@ internal fun buildFunction(
                 blockName,
                 LambdaTypeName.get(receiver = specTypeName, returnType = UNIT),
             )
-                .defaultValue("{}")
+                .apply { if (!requireConfiguration) defaultValue("{}") }
                 .build()
         )
         .returns(resultTypeName)

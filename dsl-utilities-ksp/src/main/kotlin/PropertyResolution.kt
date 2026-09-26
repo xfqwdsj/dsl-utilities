@@ -47,6 +47,10 @@ internal fun requiredProperty(
         return null
     }
     val providerType = annotation?.type("provider")
+    if (annotation?.boolean("required") == true) {
+        checker.report(property, "@DslValue.required applies to var properties; $name is a val.")
+        return null
+    }
     if (providerType != null && !providerType.isUnit()) {
         checker.report(property, "@DslValue.provider applies to var properties; $name is a val.")
         return null
@@ -99,8 +103,13 @@ internal fun valueProperty(
         checker.report(property, "@DslValue.initial and @DslValue.provider are mutually exclusive for property $name.")
         return null
     }
+    val required = annotation.boolean("required") == true
+    if (required && (initial != null || provider != null)) {
+        checker.report(property, "Required @DslValue property $name must not declare an initial value or provider.")
+        return null
+    }
     when (initial) {
-        null if provider == null && !resolvedType.isMarkedNullable -> {
+        null if provider == null && !resolvedType.isMarkedNullable && !required -> {
             checker.report(
                 property,
                 "Property $name is non-nullable and has no initial value; declare it as a val to make it required, declare it with a nullable type, or provide @DslValue.initial."
@@ -108,7 +117,7 @@ internal fun valueProperty(
             return null
         }
 
-        null if provider == null && mapper != null -> {
+        null if provider == null && mapper != null && !required -> {
             checker.report(
                 property,
                 "Property $name is nullable and has a mapper; provide @DslValue.initial so the stored value is always present."
@@ -116,7 +125,7 @@ internal fun valueProperty(
             return null
         }
     }
-    val initialValue = if (provider != null) {
+    val initialValue = if (required || provider != null) {
         null
     } else if (initial == null) {
         CodeBlock.of("null")
@@ -142,6 +151,7 @@ internal fun valueProperty(
         hook = hook,
         validator = validator,
         message = checker.message(annotation, name),
+        required = required,
     )
 }
 
@@ -229,14 +239,21 @@ internal fun DslProcessor.listProperty(
         checker.report(property, "Two or more children of @DslList property $name produce the same function name.")
         return null
     }
+    val scopeName = annotation.string("scopeName").orEmpty()
+    if (scopeName.isNotEmpty() && !isSimpleIdentifier(scopeName)) {
+        checker.report(property, "@DslList.scopeName of $name must be a simple identifier.")
+        return null
+    }
     return ListProperty(
         name,
         listTypeName,
+        resolvedType,
         elementTypeName,
         resolvedElementType,
         validator,
         hook,
         checker.message(annotation, name),
         children,
+        scopeName,
     )
 }

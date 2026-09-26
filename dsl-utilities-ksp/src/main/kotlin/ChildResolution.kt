@@ -2,7 +2,8 @@ package top.ltfan.dslutilities.ksp
 
 import com.google.devtools.ksp.getVisibility
 import com.google.devtools.ksp.symbol.*
-import com.squareup.kotlinpoet.*
+import com.squareup.kotlinpoet.ANY
+import com.squareup.kotlinpoet.KModifier
 import com.squareup.kotlinpoet.ksp.toClassName
 
 /**
@@ -297,8 +298,9 @@ internal fun DslProcessor.resolveChild(declaration: KSClassDeclaration, checker:
         builderVisibility = builderVisibility,
         resultVisibility = resultVisibility,
         required = required,
-        requiresConfiguration = hierarchy.abstractFunctions(declaration)
-            .any { it.declaration.annotation(DSL_CHILD_ANNOTATION) != null },
+        requiresConfiguration = annotation.boolean("requireConfiguration") == true ||
+                hierarchy.abstractFunctions(declaration)
+                    .any { it.declaration.annotation(DSL_CHILD_ANNOTATION) != null },
     )
 }
 

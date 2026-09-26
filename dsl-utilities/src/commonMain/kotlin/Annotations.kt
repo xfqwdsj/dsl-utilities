@@ -50,6 +50,12 @@ import kotlin.reflect.KClass
  * @param generateFunction Whether to generate the build function. A
  *   library that exposes its own entry point sets this to `false` and uses
  *   the generated builder class directly.
+ * @param requireConfiguration Require an explicit configuration block in
+ *   the generated entry point and in list child helpers. A child with this
+ *   setting has no property shorthand.
+ * @param buildHook An object implementing [DslBuildHook] for this spec.
+ *   Its `beforeBuild` method runs before validation and the result
+ *   snapshot.
  */
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.BINARY)
@@ -59,6 +65,8 @@ public annotation class DslBuilder(
     val builderName: String = "",
     val functionName: String = "",
     val generateFunction: Boolean = true,
+    val requireConfiguration: Boolean = false,
+    val buildHook: KClass<*> = Unit::class,
 )
 
 /**
@@ -90,6 +98,9 @@ public annotation class DslBuilder(
  *   property with a mapper requires an [initial] value.
  * @param message The message passed to `require` when validation fails.
  *   When empty, a message containing the property name is generated.
+ * @param required Require an assignment before this mutable property can
+ *   be read or built. An explicit `null` counts as an assignment for a
+ *   nullable property. Cannot be combined with [initial] or [provider].
  */
 @Target(AnnotationTarget.PROPERTY)
 @Retention(AnnotationRetention.BINARY)
@@ -100,6 +111,7 @@ public annotation class DslValue(
     val validator: KClass<*> = Unit::class,
     val mapper: KClass<*> = Unit::class,
     val message: String = "",
+    val required: Boolean = false,
 )
 
 /**
@@ -124,6 +136,9 @@ public annotation class DslValue(
  *   generated.
  * @param hook An object or companion object implementing [DslListHook],
  *   invoked before list access and element writes.
+ * @param scopeName When nonempty, generates a separate list block with
+ *   this name. Child helpers are scoped to that block, whose receiver
+ *   implements [DslListScope]. Repeated blocks append to the same list.
  */
 @Target(AnnotationTarget.PROPERTY)
 @Retention(AnnotationRetention.BINARY)
@@ -132,6 +147,7 @@ public annotation class DslList(
     val hook: KClass<*> = Unit::class,
     val children: Array<KClass<*>> = [],
     val message: String = "",
+    val scopeName: String = "",
 )
 
 /**

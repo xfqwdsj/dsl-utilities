@@ -94,12 +94,23 @@ person.tags                 // read-only list
 | `val name: String`                | Required value, a parameter of the generated build function     |
 | `@DslValue var p: String`         | DSL value with a compile-time `initial` constant                |
 | `@DslValue var p: String?`        | Optional DSL value defaulting to `null`                         |
+| `@DslValue(required = true)`      | Mutable DSL value that must be assigned before access or build  |
 | `@DslValue(provider = …::class)`  | Calls a provider once for each new builder                      |
 | `@DslValue(hook = …::class)`      | Runs hooks before property reads and writes                     |
 | `@DslValue(validator = …::class)` | Value accepted only when the validator passes                   |
 | `@DslValue(mapper = …::class)`    | Value transformed between the declared type and the stored type |
 | `@DslList var p: MutableList<T>`  | DSL list, exposed as a read-only `List` in the result           |
 | `@DslList(hook = …::class)`       | Runs hooks before list access and element writes                |
+| `@DslList(scopeName = "items")`   | Generates an `items { … }` block with its own list scope        |
+
+A required nullable value treats an explicit `null` assignment as assigned.
+Named list blocks append on repeated invocation; each block receiver implements
+`DslListScope<T>`, so extensions can work across lists of the same element type.
+`@DslBuilder(requireConfiguration = true)` requires a block for its build
+function and child helper, and omits the child's property shorthand.
+`@DslBuilder(buildHook = MyHook::class)` accepts an object implementing
+`DslBuildHook<Spec>`; `beforeBuild(scope)` runs before build-time validation
+and the result snapshot.
 
 Provider and hook implementations must be declared as an `object` or companion object.
 Providers implement `DslInitialProvider<T>` and can return values of any property type.

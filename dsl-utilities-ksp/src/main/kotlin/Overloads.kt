@@ -2,7 +2,7 @@ package top.ltfan.dslutilities.ksp
 
 import com.google.devtools.ksp.KspExperimental
 import com.google.devtools.ksp.getConstructors
-import com.google.devtools.ksp.processing.*
+import com.google.devtools.ksp.processing.Resolver
 import com.google.devtools.ksp.symbol.*
 
 /**
@@ -38,14 +38,23 @@ internal fun DslProcessor.reserveGeneratedNames(
 ) {
     fun qualified(name: String): String = if (packageName.isEmpty()) name else "$packageName.$name"
     val owner = spec.qualifiedName?.asString() ?: spec.simpleName.asString()
-    val typeNames = listOf(names.builderName, names.resultName)
+    val typeNames = listOf(names.builderName, names.resultName) +
+            listProperties.mapNotNull { it.scopeTypeName?.simpleName }
+    if (typeNames.size != typeNames.toSet().size) {
+        checker.report(spec, "Generated result, builder and named list scope types must have distinct names.")
+        return
+    }
     for (name in typeNames) {
         val qualifiedName = qualified(name)
         val existing = resolver.getClassDeclarationByName(resolver.getKSNameFromString(qualifiedName)) != null ||
                 declarationsInPackage(resolver, packageName).any { declaration ->
                     declaration is KSTypeAlias && declaration.simpleName.asString() == name
                 }
-        val constructorParameters = if (name == names.builderName) emptyList() else constructorTypes
+        val constructorParameters = when (name) {
+            names.builderName -> emptyList()
+            names.resultName -> constructorTypes
+            else -> listOf(listProperties.first { it.scopeTypeName?.simpleName == name }.type)
+        }
         val existingFunction = resolver.getFunctionDeclarationsByName(
             resolver.getKSNameFromString(qualifiedName),
             includeTopLevel = true,
@@ -133,10 +142,22 @@ internal fun DslProcessor.reserveGeneratedNames(
         reserveFunction(
             names.functionName,
             GeneratedSignature(null, requiredProperties.map { it.type }, specType),
-            optionalBlock = true,
+            optionalBlock = spec.annotation(DSL_BUILDER_ANNOTATION)?.boolean("requireConfiguration") != true,
         )
     }
     for (property in listProperties) {
+        if (property.scopeName.isNotEmpty()) {
+            reserveFunction(
+                property.scopeName,
+                GeneratedSignature(
+                    specType,
+                    emptyList(),
+                    generatedBlockReceiver = requireNotNull(property.scopeTypeName)
+                ),
+                optionalBlock = false,
+            )
+            continue
+        }
         for (child in property.children) {
             reserveFunction(
                 child.functionName,
@@ -194,7 +215,20 @@ internal fun sameSignature(
             first.parameters.zip(second.parameters).all { (firstType, secondType) ->
                 checker.sameType(firstType, secondType)
             } &&
-            checker.sameType(first.blockReceiver, second.blockReceiver)
+            when {
+                first.generatedBlockReceiver != null && second.generatedBlockReceiver != null ->
+                    first.generatedBlockReceiver == second.generatedBlockReceiver
+
+                first.generatedBlockReceiver != null ->
+                    second.blockReceiver?.declaration?.qualifiedName?.asString() ==
+                            first.generatedBlockReceiver.canonicalName
+
+                second.generatedBlockReceiver != null ->
+                    first.blockReceiver?.declaration?.qualifiedName?.asString() ==
+                            second.generatedBlockReceiver.canonicalName
+
+                else -> checker.sameType(first.blockReceiver, second.blockReceiver)
+            }
 
 /**
  * Returns `true` when [function] declares the same Kotlin signature
@@ -222,7 +256,10 @@ internal fun matchesSignature(
     if (blockArguments.size != 2) return false
     val blockReceiver = blockArguments[0].type?.resolve() ?: return false
     val blockReturnType = blockArguments[1].type?.resolve() ?: return false
-    return checker.sameType(blockReceiver, signature.blockReceiver) &&
+    val receiverMatches = signature.generatedBlockReceiver?.let { generated ->
+        checker.expandAliases(blockReceiver).declaration.qualifiedName?.asString() == generated.canonicalName
+    } ?: checker.sameType(blockReceiver, signature.blockReceiver)
+    return receiverMatches &&
             checker.sameType(blockReturnType, resolver.builtIns.unitType)
 }
 
