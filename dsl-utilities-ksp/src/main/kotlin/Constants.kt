@@ -12,6 +12,8 @@ internal const val DSL_MAPPER_NAME = "top.ltfan.dslutilities.DslMapper"
 internal const val DSL_INITIAL_PROVIDER_NAME = "top.ltfan.dslutilities.DslInitialProvider"
 internal const val DSL_VALUE_HOOK_NAME = "top.ltfan.dslutilities.DslValueHook"
 internal const val DSL_LIST_HOOK_NAME = "top.ltfan.dslutilities.DslListHook"
+internal const val DSL_BUILD_HOOK_NAME = "top.ltfan.dslutilities.DslBuildHook"
+internal val DSL_LIST_SCOPE = ClassName("top.ltfan.dslutilities", "DslListScope")
 internal val HOOKED_DSL_LIST = ClassName("top.ltfan.dslutilities", "HookedDslList")
 
 /** Prefix of the compiler-internal annotations that are never copied. */
@@ -57,6 +59,7 @@ internal const val CHILD_BUILDER_LOCAL = "childBuilder"
 internal val GENERATED_NAMES = setOf(VALUE_PARAMETER, STORED_VALUE, SNAPSHOT, ELEMENT, BUILD_FUNCTION)
 
 internal val REQUIRE = MemberName("kotlin", "require")
+internal val CHECK = MemberName("kotlin", "check")
 internal val REQUIRE_NOT_NULL = MemberName("kotlin", "requireNotNull")
 internal val MUTABLE_LIST_OF = MemberName("kotlin.collections", "mutableListOf")
 internal val TO_LIST = MemberName("kotlin.collections", "toList", isExtension = true)

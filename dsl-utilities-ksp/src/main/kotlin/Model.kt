@@ -37,6 +37,7 @@ internal class ValueProperty(
     val hook: Instantiation?,
     val validator: Instantiation?,
     val message: String,
+    val required: Boolean,
 ) {
     var fieldName: String = "${name}Field"
 }
@@ -44,14 +45,17 @@ internal class ValueProperty(
 internal class ListProperty(
     val name: String,
     val typeName: TypeName,
+    val type: KSType,
     val elementTypeName: TypeName,
     val elementType: KSType,
     val validator: Instantiation?,
     val hook: Instantiation?,
     val message: String,
     val children: List<ChildSpec>,
+    val scopeName: String,
 ) {
     var fieldName: String = "${name}Field"
+    var scopeTypeName: ClassName? = null
 }
 
 /**

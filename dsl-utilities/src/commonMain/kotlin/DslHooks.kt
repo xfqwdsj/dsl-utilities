@@ -1,5 +1,13 @@
 package top.ltfan.dslutilities
 
+/**
+ * Runs before a generated builder validates its values and takes its
+ * snapshot.
+ */
+public interface DslBuildHook<in S> {
+    public fun beforeBuild(scope: S)
+}
+
 /** Observes reads and writes of a generated value property. */
 public interface DslValueHook<in T> {
     public fun beforeSet(value: T) {}

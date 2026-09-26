@@ -187,6 +187,32 @@ internal fun Checker.hook(
     return singletonInstantiation(property, propertyName, declaration, "hook")
 }
 
+internal fun Checker.buildHook(spec: KSClassDeclaration, hookType: KSType?): Instantiation? {
+    if (hookType == null) return null
+    val type = expandAliases(hookType)
+    if (type.isUnit()) return null
+    if (type.isError) {
+        reportUnresolved(spec, "The build hook of ${spec.simpleName.asString()} is not resolvable yet.")
+        return null
+    }
+    val declaration = type.declaration as? KSClassDeclaration
+    if (declaration == null || (!declaration.isCompanionObject && declaration.classKind != ClassKind.OBJECT)) {
+        report(spec, "@DslBuilder.buildHook must be an object or companion object.")
+        return null
+    }
+    val accepted = findSuperTypeArguments(declaration, spec, DSL_BUILD_HOOK_NAME)
+        ?.singleOrNull()?.let(::expandAliases)
+    if (accepted == null || !accepted.isAssignableFrom(spec.asType(emptyList()))) {
+        report(spec, "@DslBuilder.buildHook must implement DslBuildHook accepting ${spec.simpleName.asString()}.")
+        return null
+    }
+    if (declaration.qualifiedName == null || !isAccessibleFromGeneratedCode(declaration)) {
+        report(spec, "@DslBuilder.buildHook is not visible from generated code.")
+        return null
+    }
+    return Instantiation(declaration.toClassName(), construct = false)
+}
+
 private fun Checker.singletonInstantiation(
     property: KSPropertyDeclaration,
     propertyName: String,
