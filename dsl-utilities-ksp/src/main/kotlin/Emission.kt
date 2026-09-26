@@ -66,7 +66,7 @@ internal fun builderType(
         )
         if (property.required) {
             builder.addProperty(
-                PropertySpec.builder("${property.nameField()}IsSet", BOOLEAN, KModifier.PRIVATE)
+                PropertySpec.builder(property.isSetFieldName, BOOLEAN, KModifier.PRIVATE)
                     .mutable(true).initializer("false").build()
             )
         }
@@ -109,7 +109,7 @@ internal fun builderType(
                     addStatement(
                         "%L(%N) { %S }",
                         context.member(CHECK),
-                        "${property.nameField()}IsSet",
+                        property.isSetFieldName,
                         "Property ${property.name} is required.",
                     )
                 }
@@ -156,7 +156,7 @@ internal fun builderType(
                     }
                     addStatement("%N = $STORED_VALUE", property.nameField())
                 }
-                if (property.required) addStatement("%N = true", "${property.nameField()}IsSet")
+                if (property.required) addStatement("%N = true", property.isSetFieldName)
             }
             .build()
         builder.addProperty(
@@ -240,7 +240,7 @@ internal fun builderType(
         if (property.required) buildCode.addStatement(
             "%L(%N) { %S }",
             context.member(CHECK),
-            "${property.nameField()}IsSet",
+            property.isSetFieldName,
             "Property ${property.name} is required.",
         )
     }

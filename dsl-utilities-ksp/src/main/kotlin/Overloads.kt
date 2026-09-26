@@ -146,7 +146,18 @@ internal fun DslProcessor.reserveGeneratedNames(
         )
     }
     for (property in listProperties) {
-        if (property.scopeName.isNotEmpty()) continue
+        if (property.scopeName.isNotEmpty()) {
+            reserveFunction(
+                property.scopeName,
+                GeneratedSignature(
+                    specType,
+                    emptyList(),
+                    generatedBlockReceiver = requireNotNull(property.scopeTypeName)
+                ),
+                optionalBlock = false,
+            )
+            continue
+        }
         for (child in property.children) {
             reserveFunction(
                 child.functionName,
@@ -204,7 +215,20 @@ internal fun sameSignature(
             first.parameters.zip(second.parameters).all { (firstType, secondType) ->
                 checker.sameType(firstType, secondType)
             } &&
-            checker.sameType(first.blockReceiver, second.blockReceiver)
+            when {
+                first.generatedBlockReceiver != null && second.generatedBlockReceiver != null ->
+                    first.generatedBlockReceiver == second.generatedBlockReceiver
+
+                first.generatedBlockReceiver != null ->
+                    second.blockReceiver?.declaration?.qualifiedName?.asString() ==
+                            first.generatedBlockReceiver.canonicalName
+
+                second.generatedBlockReceiver != null ->
+                    first.blockReceiver?.declaration?.qualifiedName?.asString() ==
+                            second.generatedBlockReceiver.canonicalName
+
+                else -> checker.sameType(first.blockReceiver, second.blockReceiver)
+            }
 
 /**
  * Returns `true` when [function] declares the same Kotlin signature
@@ -232,7 +256,10 @@ internal fun matchesSignature(
     if (blockArguments.size != 2) return false
     val blockReceiver = blockArguments[0].type?.resolve() ?: return false
     val blockReturnType = blockArguments[1].type?.resolve() ?: return false
-    return checker.sameType(blockReceiver, signature.blockReceiver) &&
+    val receiverMatches = signature.generatedBlockReceiver?.let { generated ->
+        checker.expandAliases(blockReceiver).declaration.qualifiedName?.asString() == generated.canonicalName
+    } ?: checker.sameType(blockReceiver, signature.blockReceiver)
+    return receiverMatches &&
             checker.sameType(blockReturnType, resolver.builtIns.unitType)
 }
 

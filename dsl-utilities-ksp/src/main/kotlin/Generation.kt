@@ -74,7 +74,6 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
     }
 
     val checker = Checker(resolver, logger, packageName)
-    val buildHook = checker.buildHook(spec, annotation?.type("buildHook"))
     val requireConfiguration = annotation?.boolean("requireConfiguration") == true
     val specQualifiedName = spec.qualifiedName?.asString()
     if (specQualifiedName == null) {
@@ -92,6 +91,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         )
         return handled(checker)
     }
+    val buildHook = checker.buildHook(spec, annotation?.type("buildHook"))
     val visibility = effectiveVisibility(spec, checker) ?: return handled(checker)
 
     val requiredProperties = mutableListOf<RequiredProperty>()
@@ -227,6 +227,9 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
                 )
             }
         }
+    }
+    for (name in scopeOwners.keys.intersect(childOwners.keys)) {
+        checker.report(spec, "Named list scope $name conflicts with an unscoped child helper.")
     }
 
     if (!checker.valid) return handled(checker)
@@ -417,6 +420,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
     }
     for (property in valueProperties) {
         property.fieldName = context.fileName("${property.name}Field")
+        if (property.required) property.isSetFieldName = context.fileName("${property.fieldName}IsSet")
     }
     for (property in listProperties) {
         property.fieldName = context.fileName("${property.name}Field")

@@ -206,7 +206,7 @@ internal fun Checker.buildHook(spec: KSClassDeclaration, hookType: KSType?): Ins
         report(spec, "@DslBuilder.buildHook must implement DslBuildHook accepting ${spec.simpleName.asString()}.")
         return null
     }
-    if (declaration.qualifiedName == null || !isAccessibleFromGeneratedCode(declaration)) {
+    if (declaration.qualifiedName == null || !isVisible(declaration)) {
         report(spec, "@DslBuilder.buildHook is not visible from generated code.")
         return null
     }

@@ -40,6 +40,7 @@ internal class ValueProperty(
     val required: Boolean,
 ) {
     var fieldName: String = "${name}Field"
+    lateinit var isSetFieldName: String
 }
 
 internal class ListProperty(
@@ -65,7 +66,8 @@ internal class ListProperty(
 internal class GeneratedSignature(
     val receiver: KSType?,
     val parameters: List<KSType>,
-    val blockReceiver: KSType,
+    val blockReceiver: KSType? = null,
+    val generatedBlockReceiver: ClassName? = null,
 )
 
 /**
