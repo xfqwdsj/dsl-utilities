@@ -106,6 +106,16 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         val dslValue = property.annotation(DSL_VALUE_ANNOTATION)
         val dslList = property.annotation(DSL_LIST_ANNOTATION)
 
+        if (dslValue?.string("resultName")?.isNotEmpty() == true ||
+            dslList?.string("resultName")?.isNotEmpty() == true
+        ) {
+            checker.report(
+                property,
+                "@DslValue.resultName and @DslList.resultName apply to functions; property $name uses its own name."
+            )
+            continue
+        }
+
         if (!hierarchy.isAbstract(property)) {
             if (dslValue != null || dslList != null) {
                 checker.report(
@@ -166,30 +176,54 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
                 "The generated builder declares $BUILD_FUNCTION() to return the built result, so the DSL function $BUILD_FUNCTION() must take a parameter or use another name."
             )
         }
-        if (function.annotation(DSL_CHILD_ANNOTATION) != null) {
+        if (function.annotation(DSL_CHILD_ANNOTATION) != null ||
+            function.annotation(DSL_VALUE_ANNOTATION) != null ||
+            function.annotation(DSL_LIST_ANNOTATION) != null
+        ) {
             checker.report(
                 function,
-                "@DslChild function ${function.simpleName.asString()} declares a body; declare it abstract so the processor can generate the body."
+                "Annotated DSL function ${function.simpleName.asString()} declares a body; declare it abstract so the processor can generate the body."
             )
         }
     }
     for (member in abstractFunctions) {
         val function = member.declaration
         val name = function.simpleName.asString()
-        if (function.annotation(DSL_CHILD_ANNOTATION) == null) {
-            checker.report(
-                function,
-                "Function $name must be annotated with @DslChild; DslBuilder interfaces declare properties and @DslChild functions."
+        val childAnnotation = function.annotation(DSL_CHILD_ANNOTATION)
+        val valueAnnotation = function.annotation(DSL_VALUE_ANNOTATION)
+        val listAnnotation = function.annotation(DSL_LIST_ANNOTATION)
+        if (listOfNotNull(childAnnotation, valueAnnotation, listAnnotation).size > 1) {
+            checker.report(function, "Function $name must have exactly one DSL annotation.")
+        } else when {
+            childAnnotation != null -> childScope(name, function, member.environment, checker)?.let(childScopes::add)
+            valueAnnotation != null -> valueFunction(function, member.environment, valueAnnotation, checker)?.let(
+                valueProperties::add
             )
-            continue
+
+            listAnnotation != null -> listFunction(function, member.environment, listAnnotation, checker)?.let(
+                listProperties::add
+            )
+
+            else -> checker.report(
+                function,
+                "Function $name must be annotated with @DslChild, @DslValue or @DslList."
+            )
         }
-        childScope(name, function, member.environment, checker)?.let(childScopes::add)
     }
 
-    val generatedPropertyNames = buildSet {
+    val resultNames = buildList {
         requiredProperties.mapTo(this) { it.name }
         valueProperties.mapTo(this) { it.name }
         listProperties.mapTo(this) { it.name }
+        childScopes.mapTo(this) { it.name }
+    }
+    for ((name, count) in resultNames.groupingBy { it }.eachCount()) {
+        if (count > 1) checker.report(spec, "Result property $name is produced by multiple DSL members.")
+    }
+    val generatedPropertyNames = buildSet {
+        addAll(requiredProperties.map { it.name })
+        addAll(valueProperties.map { it.name })
+        addAll(listProperties.map { it.name })
     }
     for (scope in childScopes) {
         if (scope.name in generatedPropertyNames) {

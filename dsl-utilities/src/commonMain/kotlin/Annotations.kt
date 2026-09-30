@@ -101,8 +101,13 @@ public annotation class DslBuilder(
  * @param required Require an assignment before this mutable property can
  *   be read or built. An explicit `null` counts as an assignment for a
  *   nullable property. Cannot be combined with [initial] or [provider].
+ * @param resultName The result property written by an abstract
+ *   one-argument `Unit` function. Function setters accept a nullable value
+ *   and start at `null`; each call replaces the stored value. Other
+ *   arguments of this annotation retain their defaults on functions.
+ *   Property declarations leave [resultName] empty.
  */
-@Target(AnnotationTarget.PROPERTY)
+@Target(AnnotationTarget.PROPERTY, AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.BINARY)
 public annotation class DslValue(
     val initial: String = "",
@@ -112,6 +117,7 @@ public annotation class DslValue(
     val mapper: KClass<*> = Unit::class,
     val message: String = "",
     val required: Boolean = false,
+    val resultName: String = "",
 )
 
 /**
@@ -139,8 +145,12 @@ public annotation class DslValue(
  * @param scopeName When nonempty, generates a separate list block with
  *   this name. Child helpers are scoped to that block, whose receiver
  *   implements [DslListScope]. Repeated blocks append to the same list.
+ * @param resultName The result list appended to by an abstract
+ *   one-argument `Unit` function. Other arguments of this annotation
+ *   retain their defaults on functions. Property declarations leave
+ *   [resultName] empty.
  */
-@Target(AnnotationTarget.PROPERTY)
+@Target(AnnotationTarget.PROPERTY, AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.BINARY)
 public annotation class DslList(
     val validator: KClass<*> = Unit::class,
@@ -148,6 +158,7 @@ public annotation class DslList(
     val children: Array<KClass<*>> = [],
     val message: String = "",
     val scopeName: String = "",
+    val resultName: String = "",
 )
 
 /**

@@ -40,8 +40,8 @@ internal fun Checker.functionSignature(
 
 /**
  * Renders a type as a KotlinPoet [TypeName]. The type must already carry
- * the perspective of the analyzed class, which [substituteType] provides
- * for members inherited from generic bases.
+ * the perspective of the analyzed class, which `Checker.substituteType`
+ * provides for members inherited from generic bases.
  */
 internal fun Checker.renderTypeName(symbol: KSNode, type: KSType): TypeName? = renderTypeName(symbol, type, null)
 
