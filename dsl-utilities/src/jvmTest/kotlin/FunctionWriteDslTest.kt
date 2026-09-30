@@ -32,6 +32,19 @@ class FunctionWriteDslTest {
     }
 
     @Test
+    fun `write parameters cannot shadow generated storage`() {
+        val builder = CollidingWriteParametersDslBuilder()
+        val entry = mutableListOf("first")
+        builder.append(entry)
+        builder.setValue("stored")
+
+        val result = builder.build()
+        assertEquals(listOf(entry), result.items)
+        assertEquals("stored", result.value)
+        assertEquals(listOf("first"), entry)
+    }
+
+    @Test
     fun `generated builder keeps write storage private`() {
         val file = File("build/generated/ksp").walkTopDown().firstOrNull { it.name == "RecordedScopeDslBuilder.kt" }
         assertNotNull(file)

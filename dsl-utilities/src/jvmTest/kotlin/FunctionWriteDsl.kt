@@ -24,3 +24,12 @@ interface AppendBase<T> {
 
 @DslBuilder(generateFunction = false)
 internal interface InheritedAppendDsl : AppendBase<String>
+
+@DslBuilder(generateFunction = false)
+internal interface CollidingWriteParametersDsl {
+    @DslList(resultName = "items")
+    fun append(itemsField: MutableList<String>)
+
+    @DslValue(resultName = "value")
+    fun setValue(valueField: String?)
+}
