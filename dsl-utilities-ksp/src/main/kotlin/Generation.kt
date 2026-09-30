@@ -79,7 +79,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
     if (specQualifiedName == null) {
         checker.report(
             spec,
-            "@DslBuilder applies to declarations with a qualified name, but $specName is local or anonymous."
+            "@DslBuilder applies to declarations with a qualified name, but $specName is local or anonymous.",
         )
         return handled(checker)
     }
@@ -87,7 +87,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
     if (spec.typeParameters.isNotEmpty()) {
         checker.report(
             spec,
-            "DslBuilder interfaces must not declare type parameters; the generated builder and result classes do not carry them."
+            "DslBuilder interfaces must not declare type parameters; the generated builder and result classes do not carry them.",
         )
         return handled(checker)
     }
@@ -106,11 +106,21 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         val dslValue = property.annotation(DSL_VALUE_ANNOTATION)
         val dslList = property.annotation(DSL_LIST_ANNOTATION)
 
+        if (dslValue?.string("resultName")?.isNotEmpty() == true ||
+            dslList?.string("resultName")?.isNotEmpty() == true
+        ) {
+            checker.report(
+                property,
+                "@DslValue.resultName and @DslList.resultName apply to functions; property $name uses its own name.",
+            )
+            continue
+        }
+
         if (!hierarchy.isAbstract(property)) {
             if (dslValue != null || dslList != null) {
                 checker.report(
                     property,
-                    "Property $name must be abstract for @DslValue or @DslList to generate its accessors."
+                    "Property $name must be abstract for @DslValue or @DslList to generate its accessors.",
                 )
             }
             continue
@@ -134,7 +144,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
                 type,
                 declarationType,
                 dslValue,
-                checker
+                checker,
             )?.let(requiredProperties::add)
         } else if (dslValue != null) {
             valueProperty(name, property, type, declarationType, dslValue, checker)?.let(valueProperties::add)
@@ -149,53 +159,78 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         if (overloads.size > 1) {
             checker.report(
                 spec,
-                "DslBuilder interface $specName overloads child-scope function $name; overloaded child-scope names are not supported."
+                "DslBuilder interface $specName overloads child-scope function $name; overloaded child-scope names are not supported.",
             )
         }
     }
     for (member in hierarchy.allFunctions(spec)) {
         val function = member.declaration
         specMemberNames += function.simpleName.asString()
-        if (function.isAbstract || function.getVisibility() == Visibility.PRIVATE) continue
+        if (function.isAbstract) continue
+        if (function.annotation(DSL_CHILD_ANNOTATION) != null ||
+            function.annotation(DSL_VALUE_ANNOTATION) != null ||
+            function.annotation(DSL_LIST_ANNOTATION) != null
+        ) {
+            checker.report(
+                function,
+                "Annotated DSL function ${function.simpleName.asString()} declares a body; declare it abstract so the processor can generate the body.",
+            )
+        }
+        if (function.getVisibility() == Visibility.PRIVATE) continue
         if (function.simpleName.asString() == BUILD_FUNCTION &&
             function.parameters.isEmpty() &&
             function.extensionReceiver == null
         ) {
             checker.report(
                 function,
-                "The generated builder declares $BUILD_FUNCTION() to return the built result, so the DSL function $BUILD_FUNCTION() must take a parameter or use another name."
-            )
-        }
-        if (function.annotation(DSL_CHILD_ANNOTATION) != null) {
-            checker.report(
-                function,
-                "@DslChild function ${function.simpleName.asString()} declares a body; declare it abstract so the processor can generate the body."
+                "The generated builder declares $BUILD_FUNCTION() to return the built result, so the DSL function $BUILD_FUNCTION() must take a parameter or use another name.",
             )
         }
     }
     for (member in abstractFunctions) {
         val function = member.declaration
         val name = function.simpleName.asString()
-        if (function.annotation(DSL_CHILD_ANNOTATION) == null) {
-            checker.report(
-                function,
-                "Function $name must be annotated with @DslChild; DslBuilder interfaces declare properties and @DslChild functions."
+        val childAnnotation = function.annotation(DSL_CHILD_ANNOTATION)
+        val valueAnnotation = function.annotation(DSL_VALUE_ANNOTATION)
+        val listAnnotation = function.annotation(DSL_LIST_ANNOTATION)
+        if (listOfNotNull(childAnnotation, valueAnnotation, listAnnotation).size > 1) {
+            checker.report(function, "Function $name must have exactly one DSL annotation.")
+        } else when {
+            childAnnotation != null -> childScope(name, function, member.environment, checker)?.let(childScopes::add)
+            valueAnnotation != null -> valueFunction(function, member.environment, valueAnnotation, checker)?.let(
+                valueProperties::add,
             )
-            continue
+
+            listAnnotation != null -> listFunction(function, member.environment, listAnnotation, checker)?.let(
+                listProperties::add,
+            )
+
+            else -> checker.report(
+                function,
+                "Function $name must be annotated with @DslChild, @DslValue or @DslList.",
+            )
         }
-        childScope(name, function, member.environment, checker)?.let(childScopes::add)
     }
 
-    val generatedPropertyNames = buildSet {
+    val resultNames = buildList {
         requiredProperties.mapTo(this) { it.name }
         valueProperties.mapTo(this) { it.name }
         listProperties.mapTo(this) { it.name }
+        childScopes.mapTo(this) { it.name }
+    }
+    for ((name, count) in resultNames.groupingBy { it }.eachCount()) {
+        if (count > 1) checker.report(spec, "Result property $name is produced by multiple DSL members.")
+    }
+    val generatedPropertyNames = buildSet {
+        addAll(requiredProperties.map { it.name })
+        addAll(valueProperties.map { it.name })
+        addAll(listProperties.map { it.name })
     }
     for (scope in childScopes) {
         if (scope.name in generatedPropertyNames) {
             checker.report(
                 spec,
-                "@DslChild function ${scope.name} conflicts with a DSL property of the same name."
+                "@DslChild function ${scope.name} conflicts with a DSL property of the same name.",
             )
         }
     }
@@ -215,7 +250,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
             if (property.scopeName.isEmpty() && child.functionName in memberNames) {
                 checker.report(
                     spec,
-                    "Child helper ${child.functionName} of @DslList property ${property.name} conflicts with a DSL member."
+                    "Child helper ${child.functionName} of @DslList property ${property.name} conflicts with a DSL member.",
                 )
             }
             val previousOwner = if (property.scopeName.isEmpty())
@@ -223,7 +258,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
             if (previousOwner != null && previousOwner != property.name) {
                 checker.report(
                     spec,
-                    "DslList properties $previousOwner and ${property.name} both generate child helper ${child.functionName}."
+                    "DslList properties $previousOwner and ${property.name} both generate child helper ${child.functionName}.",
                 )
             }
         }
@@ -275,7 +310,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
                 if (hierarchy.isAbstract(property)) {
                     checker.report(
                         spec,
-                        "The result supertype ${supertypeDeclaration.simpleName.asString()} declares property $name, which the generated result cannot implement."
+                        "The result supertype ${supertypeDeclaration.simpleName.asString()} declares property $name, which the generated result cannot implement.",
                     )
                 }
                 continue
@@ -294,7 +329,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
                 property.isMutable && (provided != null || hierarchy.isAbstract(property)) ->
                     checker.report(
                         spec,
-                        "The result supertype ${supertypeDeclaration.simpleName.asString()} declares mutable property $name, which the generated result cannot override."
+                        "The result supertype ${supertypeDeclaration.simpleName.asString()} declares mutable property $name, which the generated result cannot override.",
                     )
 
                 // A concrete supertype property keeps its default when the
@@ -303,7 +338,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
                 provided == null && hierarchy.isAbstract(property) ->
                     checker.report(
                         spec,
-                        "The result supertype ${supertypeDeclaration.simpleName.asString()} declares property $name, which the DslBuilder interface does not provide."
+                        "The result supertype ${supertypeDeclaration.simpleName.asString()} declares property $name, which the DslBuilder interface does not provide.",
                     )
 
                 provided == null -> Unit
@@ -311,7 +346,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
                 !compatible ->
                     checker.report(
                         spec,
-                        "Property $name of the result supertype has type $rendered, but the DslBuilder interface provides $provided."
+                        "Property $name of the result supertype has type $rendered, but the DslBuilder interface provides $provided.",
                     )
 
                 else -> supertypeOverrides += name
@@ -324,7 +359,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
                 if (function.isAbstract) {
                     checker.report(
                         spec,
-                        "The result supertype ${supertypeDeclaration.simpleName.asString()} declares function ${function.simpleName.asString()}, which the generated result cannot implement."
+                        "The result supertype ${supertypeDeclaration.simpleName.asString()} declares function ${function.simpleName.asString()}, which the generated result cannot implement.",
                     )
                 }
                 continue
@@ -355,7 +390,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
                                 resolvedResultPropertyTypes[property.first]?.let {
                                     checker.sameType(
                                         parameter,
-                                        it
+                                        it,
                                     )
                                 } == true
                     }
@@ -384,14 +419,14 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
                 function.isAbstract && !implementable ->
                     checker.report(
                         spec,
-                        "The result supertype ${supertypeDeclaration.simpleName.asString()} declares function $name, which the generated result cannot implement."
+                        "The result supertype ${supertypeDeclaration.simpleName.asString()} declares function $name, which the generated result cannot implement.",
                     )
 
                 !function.isAbstract &&
                         (synthesizedCopy || (componentPosition != null && parameters.isEmpty() && !implementable)) ->
                     checker.report(
                         spec,
-                        "The result supertype ${supertypeDeclaration.simpleName.asString()} declares function $name, which conflicts with the generated data class member $name."
+                        "The result supertype ${supertypeDeclaration.simpleName.asString()} declares function $name, which conflicts with the generated data class member $name.",
                     )
             }
         }
@@ -402,7 +437,7 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
             visibility,
             resultSupertype?.visibility,
             *childScopes.map { it.child.resultVisibility }.toTypedArray(),
-        )
+        ),
     )
 
     // Every generated name is registered in the file context, which backs
@@ -417,6 +452,12 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
     if (names.functionName.isNotEmpty()) context.register(names.functionName)
     for (property in listProperties) {
         for (child in property.children) context.register(child.functionName)
+    }
+    for (property in valueProperties) {
+        property.setterParameterName?.let(context::register)
+    }
+    for (property in listProperties) {
+        property.appendParameterName?.let(context::register)
     }
     for (property in valueProperties) {
         property.fieldName = context.fileName("${property.name}Field")
@@ -503,11 +544,13 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
             addAll(
                 hierarchy.allProperties(supertype)
                     .filter { it.declaration.getVisibility() != Visibility.PRIVATE }
-                    .map { it.declaration })
+                    .map { it.declaration },
+            )
             addAll(
                 hierarchy.allFunctions(supertype)
                     .filter { it.declaration.getVisibility() != Visibility.PRIVATE }
-                    .map { it.declaration })
+                    .map { it.declaration },
+            )
         }
     }
     val fileSpec = FileSpec.builder(packageName, names.builderName)

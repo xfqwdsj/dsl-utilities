@@ -38,6 +38,8 @@ internal class ValueProperty(
     val validator: Instantiation?,
     val message: String,
     val required: Boolean,
+    val setterName: String? = null,
+    val setterParameterName: String? = null,
 ) {
     var fieldName: String = "${name}Field"
     lateinit var isSetFieldName: String
@@ -54,6 +56,8 @@ internal class ListProperty(
     val message: String,
     val children: List<ChildSpec>,
     val scopeName: String,
+    val appendName: String? = null,
+    val appendParameterName: String? = null,
 ) {
     var fieldName: String = "${name}Field"
     var scopeTypeName: ClassName? = null

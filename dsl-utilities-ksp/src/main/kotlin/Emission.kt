@@ -100,6 +100,17 @@ internal fun builderType(
     }
 
     for (property in valueProperties) {
+        if (property.setterName != null) {
+            val parameterName = requireNotNull(property.setterParameterName)
+            builder.addFunction(
+                FunSpec.builder(property.setterName)
+                    .addModifiers(KModifier.OVERRIDE)
+                    .addParameter(parameterName, property.typeName)
+                    .addStatement("%N = %N", property.nameField(), parameterName)
+                    .build()
+            )
+            continue
+        }
         val getter = FunSpec.getterBuilder()
             .apply {
                 if (property.hook != null) {
@@ -183,6 +194,17 @@ internal fun builderType(
     }
 
     for (property in listProperties) {
+        if (property.appendName != null) {
+            val parameterName = requireNotNull(property.appendParameterName)
+            builder.addFunction(
+                FunSpec.builder(property.appendName)
+                    .addModifiers(KModifier.OVERRIDE)
+                    .addParameter(parameterName, property.elementTypeName)
+                    .addStatement("%N.add(%N)", property.nameField(), parameterName)
+                    .build()
+            )
+            continue
+        }
         val setter = FunSpec.setterBuilder()
             .addParameter(VALUE_PARAMETER, property.typeName)
             .addStatement("val $SNAPSHOT = $VALUE_PARAMETER.%L()", context.member(TO_LIST))
@@ -272,7 +294,10 @@ internal fun builderType(
         arguments += CodeBlock.of("%N = $format", name, *values)
     }
     for (property in requiredProperties) addArgument(property.name, "%N", property.name)
-    for (property in valueProperties) addArgument(property.name, "%N", property.name)
+    for (property in valueProperties) {
+        val source = if (property.setterName == null) property.name else property.nameField()
+        addArgument(property.name, "%N", source)
+    }
     for (property in listProperties) {
         addArgument(property.name, "%N.%L()", property.nameField(), context.member(TO_LIST))
     }
