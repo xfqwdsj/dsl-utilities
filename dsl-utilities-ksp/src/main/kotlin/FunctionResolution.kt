@@ -16,8 +16,12 @@ private fun writeParameter(
     if (function.extensionReceiver != null || function.typeParameters.isNotEmpty() || function.parameters.size != 1) {
         checker.report(
             function,
-            "$annotationName function $name must have one value parameter, no receiver and no type parameters."
+            "$annotationName function $name must have one value parameter, no receiver and no type parameters.",
         )
+        return null
+    }
+    if (Modifier.SUSPEND in function.modifiers) {
+        checker.report(function, "$annotationName function $name must not be suspend.")
         return null
     }
     val returnType = function.returnType?.resolve()
@@ -35,7 +39,7 @@ private fun writeParameter(
     if (parameterName == null || parameter.isVararg || parameter.hasDefault) {
         checker.report(
             function,
-            "$annotationName function $name must declare a named, non-vararg parameter without a default."
+            "$annotationName function $name must declare a named, non-vararg parameter without a default.",
         )
         return null
     }
@@ -43,7 +47,7 @@ private fun writeParameter(
     if (type.isError) {
         checker.reportUnresolved(
             function,
-            "The parameter type of $annotationName function $name is not resolvable yet."
+            "The parameter type of $annotationName function $name is not resolvable yet.",
         )
         return null
     }
@@ -61,7 +65,7 @@ private fun resultName(
     if (name.isEmpty() || !isSimpleIdentifier(name)) {
         checker.report(
             function,
-            "$annotationName.resultName of ${function.simpleName.asString()} must be a simple identifier."
+            "$annotationName.resultName of ${function.simpleName.asString()} must be a simple identifier.",
         )
         return null
     }
