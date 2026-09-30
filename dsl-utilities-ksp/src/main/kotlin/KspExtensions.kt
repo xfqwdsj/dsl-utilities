@@ -2,8 +2,16 @@ package top.ltfan.dslutilities.ksp
 
 import com.google.devtools.ksp.getVisibility
 import com.google.devtools.ksp.isDefault
-import com.google.devtools.ksp.symbol.*
-import com.squareup.kotlinpoet.*
+import com.google.devtools.ksp.symbol.KSAnnotated
+import com.google.devtools.ksp.symbol.KSAnnotation
+import com.google.devtools.ksp.symbol.KSClassDeclaration
+import com.google.devtools.ksp.symbol.KSDeclaration
+import com.google.devtools.ksp.symbol.KSType
+import com.google.devtools.ksp.symbol.KSTypeAlias
+import com.google.devtools.ksp.symbol.Visibility
+import com.squareup.kotlinpoet.AnnotationSpec
+import com.squareup.kotlinpoet.ClassName
+import com.squareup.kotlinpoet.UNIT
 
 internal fun KSAnnotated.annotation(qualifiedName: String): KSAnnotation? =
     annotations.firstOrNull {

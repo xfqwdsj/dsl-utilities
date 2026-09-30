@@ -2,7 +2,13 @@ package top.ltfan.dslutilities.test
 
 import top.ltfan.dslutilities.test.collision.toList
 import java.io.File
-import kotlin.test.*
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class AliasHandlingTest {
     @Test

@@ -1,7 +1,14 @@
 package top.ltfan.dslutilities.ksp
 
 import com.google.devtools.ksp.getConstructors
-import com.google.devtools.ksp.symbol.*
+import com.google.devtools.ksp.symbol.ClassKind
+import com.google.devtools.ksp.symbol.KSClassDeclaration
+import com.google.devtools.ksp.symbol.KSDeclaration
+import com.google.devtools.ksp.symbol.KSNode
+import com.google.devtools.ksp.symbol.KSPropertyDeclaration
+import com.google.devtools.ksp.symbol.KSType
+import com.google.devtools.ksp.symbol.KSTypeParameter
+import com.google.devtools.ksp.symbol.Modifier
 import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.ksp.toClassName
 
@@ -41,14 +48,14 @@ internal fun Checker.validator(
             property,
             "The validator of property $propertyName validates a type that does not accept ${
                 typeNameOrNull(valueType) ?: "the property"
-            } values."
+            } values.",
         )
         return null
     }
     val prefix = instantiation(property, propertyName, declaration, "validator") ?: return null
     if (prefix.construct) logger.warn(
         "Class validators are deprecated; declare the validator as an object. Class support will be removed in 3.0.",
-        property
+        property,
     )
     return prefix
 }
@@ -87,7 +94,7 @@ internal fun Checker.mapper(
     if (dslMapperArguments.size != 2 || dslMapperArguments.any { it == null }) {
         report(
             property,
-            "The mapper of property $propertyName must implement DslMapper with two type arguments."
+            "The mapper of property $propertyName must implement DslMapper with two type arguments.",
         )
         return null
     }
@@ -101,14 +108,14 @@ internal fun Checker.mapper(
             property,
             "The mapper of property $propertyName maps a type that does not accept ${
                 typeNameOrNull(propertyType) ?: "the property"
-            } values."
+            } values.",
         )
         return null
     }
     val target = instantiation(property, propertyName, declaration, "mapper") ?: return null
     if (target.construct) logger.warn(
         "Class mappers are deprecated; declare the mapper as an object. Class support will be removed in 3.0.",
-        property
+        property,
     )
     val storageTypeName = renderTypeName(property, storedType) ?: return null
     return MapperInfo(target, storageTypeName, storedType)
@@ -145,7 +152,7 @@ internal fun Checker.initialProvider(
     if (providedType == null || !valueType.isAssignableFrom(providedType)) {
         report(
             property,
-            "The initial provider of property $propertyName returns a type that is not assignable to the property."
+            "The initial provider of property $propertyName returns a type that is not assignable to the property.",
         )
         return null
     }
@@ -264,7 +271,7 @@ internal fun Checker.instantiation(
             if (callable) Instantiation(declaration.toClassName(), construct = true) else {
                 report(
                     property,
-                    "The $role of property $propertyName is a class without an accessible constructor callable with no arguments."
+                    "The $role of property $propertyName is a class without an accessible constructor callable with no arguments.",
                 )
                 null
             }
@@ -288,7 +295,7 @@ internal fun Checker.literal(
     property: KSPropertyDeclaration,
     propertyName: String,
     initial: String,
-    type: KSType
+    type: KSType,
 ): CodeBlock? {
     val literalClass = expandAliases(type).makeNotNullable().declaration
     val format = initialFormats.firstOrNull { literalClass.isClass(it.type) }
@@ -297,14 +304,14 @@ internal fun Checker.literal(
             property,
             "@DslValue.initial of property $propertyName supports " +
                     initialFormats.dropLast(1).joinToString(", ") { it.type.simpleName } +
-                    ", and ${initialFormats.last().type.simpleName} constants."
+                    ", and ${initialFormats.last().type.simpleName} constants.",
         )
         return null
     }
     return format.parse(initial) ?: run {
         report(
             property,
-            "@DslValue.initial of property $propertyName is \"$initial\", which is ${format.detail}."
+            "@DslValue.initial of property $propertyName is \"$initial\", which is ${format.detail}.",
         )
         null
     }

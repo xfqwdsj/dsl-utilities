@@ -1,15 +1,31 @@
 package top.ltfan.dslutilities.ksp
 
-import com.google.devtools.ksp.symbol.*
-import com.squareup.kotlinpoet.*
+import com.google.devtools.ksp.symbol.KSAnnotation
+import com.google.devtools.ksp.symbol.KSClassDeclaration
+import com.google.devtools.ksp.symbol.KSDeclaration
+import com.google.devtools.ksp.symbol.KSFunctionDeclaration
+import com.google.devtools.ksp.symbol.KSNode
+import com.google.devtools.ksp.symbol.KSType
+import com.google.devtools.ksp.symbol.KSTypeAlias
+import com.google.devtools.ksp.symbol.KSTypeParameter
+import com.google.devtools.ksp.symbol.Variance
+import com.squareup.kotlinpoet.ANY
+import com.squareup.kotlinpoet.LIST
+import com.squareup.kotlinpoet.LambdaTypeName
+import com.squareup.kotlinpoet.ParameterSpec
+import com.squareup.kotlinpoet.ParameterizedTypeName
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
+import com.squareup.kotlinpoet.STAR
+import com.squareup.kotlinpoet.TypeName
+import com.squareup.kotlinpoet.UNIT
+import com.squareup.kotlinpoet.WildcardTypeName
 import com.squareup.kotlinpoet.ksp.toClassName
 import com.squareup.kotlinpoet.ksp.toTypeName
 
 /** Returns the immutable list type generated for a list result property. */
 internal fun Checker.immutableListType(elementType: KSType): KSType? {
     val declaration = resolver.getClassDeclarationByName(
-        resolver.getKSNameFromString(LIST.canonicalName)
+        resolver.getKSNameFromString(LIST.canonicalName),
     ) ?: return null
     val argument = resolver.getTypeArgument(
         resolver.createKSTypeReferenceFromKSType(expandAliases(elementType)),
@@ -83,7 +99,7 @@ internal fun Checker.renderTypeName(symbol: KSNode, type: KSType, annotationsFro
             val hidden = if (renderByName) aliasUsage else resolved
             report(
                 symbol,
-                "The type ${typeNameOrNull(hidden) ?: hidden} of ${symbolDescription(symbol)} is not visible from generated code."
+                "The type ${typeNameOrNull(hidden) ?: hidden} of ${symbolDescription(symbol)} is not visible from generated code.",
             )
             return null
         }
@@ -98,7 +114,7 @@ internal fun Checker.renderTypeName(symbol: KSNode, type: KSType, annotationsFro
         if (!annotationSources.all { areTypeAnnotationsVisible(it) }) {
             report(
                 symbol,
-                "A type-use annotation of ${symbolDescription(symbol)} or one of its arguments is not visible from generated code."
+                "A type-use annotation of ${symbolDescription(symbol)} or one of its arguments is not visible from generated code.",
             )
             return null
         }
@@ -111,7 +127,7 @@ internal fun Checker.renderTypeName(symbol: KSNode, type: KSType, annotationsFro
             isFunction && hasUnboundProjection -> {
                 report(
                     symbol,
-                    "The type of ${symbolDescription(symbol)} has a star-projected type argument, which is not supported."
+                    "The type of ${symbolDescription(symbol)} has a star-projected type argument, which is not supported.",
                 )
                 null
             }
@@ -199,7 +215,7 @@ private fun Checker.innerClassTypeName(
     if (counts.size == 1 || counts.sum() != arguments.size) {
         report(
             symbol,
-            "The type of ${symbolDescription(symbol)} is unsupported: its enclosing type arguments cannot be reconstructed."
+            "The type of ${symbolDescription(symbol)} is unsupported: its enclosing type arguments cannot be reconstructed.",
         )
         return null
     }
@@ -312,7 +328,7 @@ internal fun Checker.lambdaTypeName(symbol: KSNode, type: KSType, shape: KSType,
         // lambda receiver.
         report(
             symbol,
-            "The type of ${symbolDescription(symbol)} is unsupported: a function type whose receiver is a function type cannot be rendered."
+            "The type of ${symbolDescription(symbol)} is unsupported: a function type whose receiver is a function type cannot be rendered.",
         )
         return null
     }

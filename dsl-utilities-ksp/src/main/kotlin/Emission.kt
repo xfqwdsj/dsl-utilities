@@ -1,7 +1,19 @@
 package top.ltfan.dslutilities.ksp
 
-import com.squareup.kotlinpoet.*
+import com.squareup.kotlinpoet.BOOLEAN
+import com.squareup.kotlinpoet.ClassName
+import com.squareup.kotlinpoet.CodeBlock
+import com.squareup.kotlinpoet.FunSpec
+import com.squareup.kotlinpoet.KModifier
+import com.squareup.kotlinpoet.LambdaTypeName
+import com.squareup.kotlinpoet.MUTABLE_LIST
+import com.squareup.kotlinpoet.ParameterSpec
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
+import com.squareup.kotlinpoet.PropertySpec
+import com.squareup.kotlinpoet.TypeName
+import com.squareup.kotlinpoet.TypeSpec
+import com.squareup.kotlinpoet.UNIT
+import com.squareup.kotlinpoet.joinToCode
 
 /**
  * Builds the generated builder class: the required properties arrive
@@ -31,7 +43,7 @@ internal fun builderType(
                         addParameter(ParameterSpec.builder(property.name, property.typeName).build())
                     }
                 }
-                .build()
+                .build(),
         )
         .addSuperinterface(specTypeName)
 
@@ -42,7 +54,7 @@ internal fun builderType(
         builder.addProperty(
             PropertySpec.builder(property.name, property.typeName, KModifier.OVERRIDE)
                 .initializer("%N", property.name)
-                .build()
+                .build(),
         )
     }
     for (property in valueProperties) {
@@ -62,12 +74,12 @@ internal fun builderType(
             )
                 .mutable(true)
                 .initializer(initializer)
-                .build()
+                .build(),
         )
         if (property.required) {
             builder.addProperty(
                 PropertySpec.builder(property.isSetFieldName, BOOLEAN, KModifier.PRIVATE)
-                    .mutable(true).initializer("false").build()
+                    .mutable(true).initializer("false").build(),
             )
         }
     }
@@ -83,7 +95,7 @@ internal fun builderType(
                 KModifier.PRIVATE,
             )
                 .initializer(initializer)
-                .build()
+                .build(),
         )
     }
     for (property in childScopes) {
@@ -95,7 +107,7 @@ internal fun builderType(
             )
                 .mutable(true)
                 .initializer("null")
-                .build()
+                .build(),
         )
     }
 
@@ -107,7 +119,7 @@ internal fun builderType(
                     .addModifiers(KModifier.OVERRIDE)
                     .addParameter(parameterName, property.typeName)
                     .addStatement("%N = %N", property.nameField(), parameterName)
-                    .build()
+                    .build(),
             )
             continue
         }
@@ -128,7 +140,7 @@ internal fun builderType(
                     if (property.required && !property.typeName.isNullable) addStatement(
                         "return %N as %T",
                         property.nameField(),
-                        property.typeName
+                        property.typeName,
                     )
                     else addStatement("return %N", property.nameField())
                 } else {
@@ -151,7 +163,7 @@ internal fun builderType(
                             "%L(%L.validate($VALUE_PARAMETER)) { %L }",
                             context.member(REQUIRE),
                             property.validator.code(context),
-                            literalString(property.message)
+                            literalString(property.message),
                         )
                     }
                     addStatement("%N = $VALUE_PARAMETER", property.nameField())
@@ -162,7 +174,7 @@ internal fun builderType(
                             "%L(%L.validate($STORED_VALUE)) { %L }",
                             context.member(REQUIRE),
                             property.validator.code(context),
-                            literalString(property.message)
+                            literalString(property.message),
                         )
                     }
                     addStatement("%N = $STORED_VALUE", property.nameField())
@@ -175,7 +187,7 @@ internal fun builderType(
                 .mutable(true)
                 .getter(getter)
                 .setter(setter)
-                .build()
+                .build(),
         )
     }
 
@@ -188,7 +200,7 @@ internal fun builderType(
                     property.validator.code(context),
                     property.nameField(),
                     literalString(property.message),
-                )
+                ),
             )
         }
     }
@@ -201,7 +213,7 @@ internal fun builderType(
                     .addModifiers(KModifier.OVERRIDE)
                     .addParameter(parameterName, property.elementTypeName)
                     .addStatement("%N.add(%N)", property.nameField(), parameterName)
-                    .build()
+                    .build(),
             )
             continue
         }
@@ -221,15 +233,17 @@ internal fun builderType(
             PropertySpec.builder(
                 property.name,
                 property.typeName,
-                KModifier.OVERRIDE
+                KModifier.OVERRIDE,
             )
                 .mutable(true)
-                .getter(FunSpec.getterBuilder().apply {
-                    if (property.hook != null) addStatement("%L.beforeAccess()", property.hook.code(context))
-                    addStatement("return %N", property.nameField())
-                }.build())
+                .getter(
+                    FunSpec.getterBuilder().apply {
+                        if (property.hook != null) addStatement("%L.beforeAccess()", property.hook.code(context))
+                        addStatement("return %N", property.nameField())
+                    }.build(),
+                )
                 .setter(setter)
-                .build()
+                .build(),
         )
     }
 
@@ -252,7 +266,7 @@ internal fun builderType(
                 )
                 .addStatement("%N.invoke(%N)", property.blockName, childBuilderName)
                 .addStatement("%N = %N.$BUILD_FUNCTION()", property.nameField(), childBuilderName)
-                .build()
+                .build(),
         )
     }
 
@@ -316,7 +330,7 @@ internal fun builderType(
             .returns(resultTypeName)
             .addCode(buildCode.build())
             .addStatement("return %T(%L)", resultTypeName, arguments.joinToCode(", "))
-            .build()
+            .build(),
     )
     return builder.build()
 }
@@ -344,7 +358,7 @@ internal fun resultType(
                         addParameter(ParameterSpec.builder(name, typeName).build())
                     }
                 }
-                .build()
+                .build(),
         )
     }
     for ((name, typeName) in resultProperties) {
@@ -353,7 +367,7 @@ internal fun resultType(
         builder.addProperty(
             PropertySpec.builder(name, typeName, *modifiers.toTypedArray())
                 .initializer("%N", name)
-                .build()
+                .build(),
         )
     }
     if (supertype != null) builder.addSuperinterface(supertype)
@@ -393,7 +407,7 @@ internal fun elementFunctions(
             val childBuilderName = scope.newName(CHILD_BUILDER_LOCAL)
             val arguments = requiredArguments(child.required)
             val visibility = restrictiveVisibility(
-                listOf(parentVisibility, child.builderVisibility, child.resultVisibility)
+                listOf(parentVisibility, child.builderVisibility, child.resultVisibility),
             )
             functions += FunSpec.builder(child.functionName)
                 .addModifiers(visibility, KModifier.INLINE)
@@ -412,7 +426,7 @@ internal fun elementFunctions(
                         .apply {
                             if (!child.requiresConfiguration) defaultValue("{}")
                         }
-                        .build()
+                        .build(),
                 )
                 .addStatement(
                     "val %N = %L(%L)",
@@ -437,7 +451,7 @@ internal fun elementFunctions(
                         FunSpec.getterBuilder()
                             .addModifiers(KModifier.INLINE)
                             .addStatement("%N()", child.functionName)
-                            .build()
+                            .build(),
                     )
                     .build()
             }
@@ -500,7 +514,7 @@ internal fun buildFunction(
                 LambdaTypeName.get(receiver = specTypeName, returnType = UNIT),
             )
                 .apply { if (!requireConfiguration) defaultValue("{}") }
-                .build()
+                .build(),
         )
         .returns(resultTypeName)
         .addStatement("val %N = %T(%L)", builderName, builderTypeName, arguments)

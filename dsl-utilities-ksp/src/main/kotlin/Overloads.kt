@@ -3,7 +3,12 @@ package top.ltfan.dslutilities.ksp
 import com.google.devtools.ksp.KspExperimental
 import com.google.devtools.ksp.getConstructors
 import com.google.devtools.ksp.processing.Resolver
-import com.google.devtools.ksp.symbol.*
+import com.google.devtools.ksp.symbol.KSClassDeclaration
+import com.google.devtools.ksp.symbol.KSDeclaration
+import com.google.devtools.ksp.symbol.KSFunctionDeclaration
+import com.google.devtools.ksp.symbol.KSPropertyDeclaration
+import com.google.devtools.ksp.symbol.KSType
+import com.google.devtools.ksp.symbol.KSTypeAlias
 
 /**
  * Reports generated declaration collisions before opening an output
@@ -78,7 +83,7 @@ internal fun DslProcessor.reserveGeneratedNames(
             existingFunction ->
                 checker.report(
                     spec,
-                    "Generated type $qualifiedName conflicts with an existing function declaration of the same signature."
+                    "Generated type $qualifiedName conflicts with an existing function declaration of the same signature.",
                 )
 
             reservedBy != null && reservedBy != owner ->
@@ -87,7 +92,7 @@ internal fun DslProcessor.reserveGeneratedNames(
             spelling != null && spelling != qualifiedName ->
                 checker.report(
                     spec,
-                    "Generated type $qualifiedName conflicts with $spelling on a case-insensitive file system."
+                    "Generated type $qualifiedName conflicts with $spelling on a case-insensitive file system.",
                 )
         }
     }
@@ -128,7 +133,7 @@ internal fun DslProcessor.reserveGeneratedNames(
             existingPrefix ->
                 checker.report(
                     spec,
-                    "Generated function $qualifiedName conflicts with an existing declaration that accepts the same parameters."
+                    "Generated function $qualifiedName conflicts with an existing declaration that accepts the same parameters.",
                 )
 
             reservedBy != null && reservedBy != owner ->
@@ -152,7 +157,7 @@ internal fun DslProcessor.reserveGeneratedNames(
                 GeneratedSignature(
                     specType,
                     emptyList(),
-                    generatedBlockReceiver = requireNotNull(property.scopeTypeName)
+                    generatedBlockReceiver = requireNotNull(property.scopeTypeName),
                 ),
                 optionalBlock = false,
             )
@@ -179,13 +184,13 @@ internal fun DslProcessor.reserveGeneratedNames(
                     existing ->
                         checker.report(
                             spec,
-                            "Generated extension property ${child.functionName} conflicts with an existing declaration."
+                            "Generated extension property ${child.functionName} conflicts with an existing declaration.",
                         )
 
                     reservedBy != null && reservedBy != owner ->
                         checker.report(
                             spec,
-                            "Generated extension property ${child.functionName} is also produced by $reservedBy."
+                            "Generated extension property ${child.functionName} is also produced by $reservedBy.",
                         )
                 }
                 if (checker.valid) generatedPropertyOwners[shorthandKey] = owner

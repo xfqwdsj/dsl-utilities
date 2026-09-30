@@ -1,6 +1,12 @@
 package top.ltfan.dslutilities.ksp
 
-import com.squareup.kotlinpoet.*
+import com.squareup.kotlinpoet.ClassName
+import com.squareup.kotlinpoet.CodeBlock
+import com.squareup.kotlinpoet.FileSpec
+import com.squareup.kotlinpoet.FunSpec
+import com.squareup.kotlinpoet.MemberName
+import com.squareup.kotlinpoet.NameAllocator
+import com.squareup.kotlinpoet.PropertySpec
 
 internal class ElementFunctions(
     val functions: List<FunSpec>,

@@ -1,6 +1,10 @@
 package top.ltfan.dslutilities.test
 
-import top.ltfan.dslutilities.*
+import top.ltfan.dslutilities.DslBuildHook
+import top.ltfan.dslutilities.DslBuilder
+import top.ltfan.dslutilities.DslList
+import top.ltfan.dslutilities.DslListScope
+import top.ltfan.dslutilities.DslValue
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith

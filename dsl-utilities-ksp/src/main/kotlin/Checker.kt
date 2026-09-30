@@ -1,8 +1,16 @@
 package top.ltfan.dslutilities.ksp
 
-import com.google.devtools.ksp.processing.*
-import com.google.devtools.ksp.symbol.*
-import com.squareup.kotlinpoet.*
+import com.google.devtools.ksp.processing.KSPLogger
+import com.google.devtools.ksp.processing.Resolver
+import com.google.devtools.ksp.symbol.KSAnnotation
+import com.google.devtools.ksp.symbol.KSFunctionDeclaration
+import com.google.devtools.ksp.symbol.KSNode
+import com.google.devtools.ksp.symbol.KSPropertyDeclaration
+import com.google.devtools.ksp.symbol.KSType
+import com.google.devtools.ksp.symbol.KSTypeParameter
+import com.squareup.kotlinpoet.AnnotationSpec
+import com.squareup.kotlinpoet.TypeName
+import com.squareup.kotlinpoet.annotated
 import com.squareup.kotlinpoet.ksp.toAnnotationSpec
 
 /**

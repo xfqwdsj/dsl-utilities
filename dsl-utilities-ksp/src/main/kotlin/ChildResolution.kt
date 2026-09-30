@@ -1,7 +1,15 @@
 package top.ltfan.dslutilities.ksp
 
 import com.google.devtools.ksp.getVisibility
-import com.google.devtools.ksp.symbol.*
+import com.google.devtools.ksp.symbol.ClassKind
+import com.google.devtools.ksp.symbol.KSAnnotation
+import com.google.devtools.ksp.symbol.KSClassDeclaration
+import com.google.devtools.ksp.symbol.KSDeclaration
+import com.google.devtools.ksp.symbol.KSFunctionDeclaration
+import com.google.devtools.ksp.symbol.KSType
+import com.google.devtools.ksp.symbol.KSTypeParameter
+import com.google.devtools.ksp.symbol.Modifier
+import com.google.devtools.ksp.symbol.Visibility
 import com.squareup.kotlinpoet.ANY
 import com.squareup.kotlinpoet.KModifier
 import com.squareup.kotlinpoet.ksp.toClassName
@@ -45,7 +53,7 @@ internal fun DslProcessor.childScope(
     if (parameters.isEmpty()) {
         checker.report(
             function,
-            "@DslChild function $name declares no parameters; the last parameter must be a function type with the child DslBuilder interface as receiver."
+            "@DslChild function $name declares no parameters; the last parameter must be a function type with the child DslBuilder interface as receiver.",
         )
         return null
     }
@@ -95,14 +103,14 @@ internal fun DslProcessor.childScope(
     if (hasUnboundProjection && (blockShape.isFunctionType || isSuspend)) {
         checker.report(
             function,
-            "The last parameter of @DslChild function $name has a star-projected type argument, which is not supported."
+            "The last parameter of @DslChild function $name has a star-projected type argument, which is not supported.",
         )
         return null
     }
     if (isReceiverStyle && arguments.size > 2) {
         checker.report(
             function,
-            "The last parameter of @DslChild function $name must not declare value parameters."
+            "The last parameter of @DslChild function $name must not declare value parameters.",
         )
         return null
     }
@@ -120,7 +128,7 @@ internal fun DslProcessor.childScope(
                             checker.substituteType(declaredParameterType, environment)
                         } else {
                             declaredParameterType
-                        }
+                        },
                     )
                     if (
                         !parameterShape.isFunctionType ||
@@ -140,14 +148,14 @@ internal fun DslProcessor.childScope(
                 "The block parameter of @DslChild function $name must be the last parameter."
             } else {
                 "The last parameter of @DslChild function $name must be a function type with the child DslBuilder interface as receiver and a Unit return type."
-            }
+            },
         )
         return null
     }
     if (!isReceiverStyle) {
         checker.report(
             function,
-            "The last parameter of @DslChild function $name must take the child DslBuilder interface as a receiver."
+            "The last parameter of @DslChild function $name must take the child DslBuilder interface as a receiver.",
         )
         return null
     }
@@ -157,7 +165,7 @@ internal fun DslProcessor.childScope(
         // be called from it.
         checker.report(
             function,
-            "@DslChild function $name must not be suspend or take a suspend block."
+            "@DslChild function $name must not be suspend or take a suspend block.",
         )
         return null
     }
@@ -168,14 +176,14 @@ internal fun DslProcessor.childScope(
     ) {
         checker.report(
             function,
-            "The last parameter of @DslChild function $name must return Unit."
+            "The last parameter of @DslChild function $name must return Unit.",
         )
         return null
     }
     val receiverType = arguments[0].type?.resolve()?.let { checker.expandAliases(it) } ?: run {
         checker.report(
             function,
-            "The last parameter of @DslChild function $name must be a function type with the child DslBuilder interface as receiver."
+            "The last parameter of @DslChild function $name must be a function type with the child DslBuilder interface as receiver.",
         )
         return null
     }
@@ -192,7 +200,7 @@ internal fun DslProcessor.childScope(
     if (declaredParameters.size != child.required.size) {
         checker.report(
             function,
-            "@DslChild function $name declares ${declaredParameters.size} value parameters for a child with ${child.required.size} required properties."
+            "@DslChild function $name declares ${declaredParameters.size} value parameters for a child with ${child.required.size} required properties.",
         )
         return null
     }
@@ -213,7 +221,7 @@ internal fun DslProcessor.childScope(
         if (parameterName != required.name || !required.type.isAssignableFrom(parameterType)) {
             checker.report(
                 function,
-                "Parameter $parameterName of @DslChild function $name does not match required property ${required.name} of type ${required.typeName} of the child."
+                "Parameter $parameterName of @DslChild function $name does not match required property ${required.name} of type ${required.typeName} of the child.",
             )
             return null
         }
@@ -243,14 +251,14 @@ internal fun DslProcessor.resolveChild(declaration: KSClassDeclaration, checker:
     if (declaration.classKind != ClassKind.INTERFACE) {
         checker.report(
             declaration,
-            "@DslBuilder applies to interfaces, but $specName is a ${declaration.classKind}."
+            "@DslBuilder applies to interfaces, but $specName is a ${declaration.classKind}.",
         )
         return null
     }
     if (declaration.typeParameters.isNotEmpty()) {
         checker.report(
             declaration,
-            "Child DslBuilder interface $specName must not declare type parameters."
+            "Child DslBuilder interface $specName must not declare type parameters.",
         )
         return null
     }
@@ -268,7 +276,7 @@ internal fun DslProcessor.resolveChild(declaration: KSClassDeclaration, checker:
     if (resultVisibility == KModifier.INTERNAL && !declaration.isDeclaredInThisModule()) {
         checker.report(
             declaration,
-            "Child $specName has an internal generated result that is not accessible from this module."
+            "Child $specName has an internal generated result that is not accessible from this module.",
         )
         return null
     }
@@ -285,7 +293,7 @@ internal fun DslProcessor.resolveChild(declaration: KSClassDeclaration, checker:
             typeName,
             checker.expandAliases(type),
             null,
-            ""
+            "",
         )
     }
     return ChildSpec(
@@ -340,7 +348,7 @@ internal fun resolveResultSupertype(
         if (!samePackage || !sameModule) {
             checker.report(
                 spec,
-                "@DslBuilder.supertype of $specName is a sealed interface, so the generated result must be in its package and module."
+                "@DslBuilder.supertype of $specName is a sealed interface, so the generated result must be in its package and module.",
             )
             return null
         }
@@ -382,7 +390,7 @@ internal fun effectiveVisibility(spec: KSDeclaration, checker: Checker): KModifi
             Visibility.PRIVATE, Visibility.PROTECTED, Visibility.LOCAL -> {
                 checker.report(
                     spec,
-                    "The DslBuilder interface ${spec.simpleName.asString()} must be visible from the package level, but it is hidden by ${declaration.simpleName.asString()}."
+                    "The DslBuilder interface ${spec.simpleName.asString()} must be visible from the package level, but it is hidden by ${declaration.simpleName.asString()}.",
                 )
                 return null
             }

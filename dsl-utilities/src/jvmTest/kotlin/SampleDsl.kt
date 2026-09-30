@@ -1,6 +1,11 @@
 package top.ltfan.dslutilities.test
 
-import top.ltfan.dslutilities.*
+import top.ltfan.dslutilities.DslBuilder
+import top.ltfan.dslutilities.DslChild
+import top.ltfan.dslutilities.DslList
+import top.ltfan.dslutilities.DslMapper
+import top.ltfan.dslutilities.DslValidator
+import top.ltfan.dslutilities.DslValue
 
 object EvenIntValidator : DslValidator<Int> {
     override fun validate(value: Int): Boolean = value % 2 == 0

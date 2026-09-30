@@ -1,7 +1,8 @@
 package top.ltfan.dslutilities.ksp
 
-import com.google.devtools.ksp.symbol.*
-import com.squareup.kotlinpoet.*
+import com.google.devtools.ksp.symbol.KSAnnotation
+import com.squareup.kotlinpoet.ClassName
+import com.squareup.kotlinpoet.NameAllocator
 
 /**
  * Lowercases the first character of [name] unless the second character is

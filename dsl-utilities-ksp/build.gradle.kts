@@ -80,7 +80,7 @@ mavenPublishing {
     configure(
         KotlinJvm(
             javadocJar = JavadocJar.Dokka(tasks.dokkaGeneratePublicationHtml),
-        )
+        ),
     )
 }
 

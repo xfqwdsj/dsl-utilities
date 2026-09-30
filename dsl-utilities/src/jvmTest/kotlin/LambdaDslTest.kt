@@ -1,7 +1,10 @@
 package top.ltfan.dslutilities.test
 
 import java.io.File
-import kotlin.test.*
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class LambdaDslTest {
     @Test

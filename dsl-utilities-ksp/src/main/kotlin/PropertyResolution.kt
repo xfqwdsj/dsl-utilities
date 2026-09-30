@@ -3,7 +3,11 @@ package top.ltfan.dslutilities.ksp
 import com.google.devtools.ksp.getAllSuperTypes
 import com.google.devtools.ksp.getDeclaredProperties
 import com.google.devtools.ksp.isAbstract
-import com.google.devtools.ksp.symbol.*
+import com.google.devtools.ksp.symbol.KSAnnotation
+import com.google.devtools.ksp.symbol.KSClassDeclaration
+import com.google.devtools.ksp.symbol.KSPropertyDeclaration
+import com.google.devtools.ksp.symbol.KSType
+import com.google.devtools.ksp.symbol.Variance
 import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.MUTABLE_LIST
 
@@ -89,7 +93,7 @@ internal fun valueProperty(
     if (resolvedType.declaration.isClass(MUTABLE_LIST)) {
         checker.report(
             property,
-            "Property $name has a MutableList type; list properties are declared with @DslList."
+            "Property $name has a MutableList type; list properties are declared with @DslList.",
         )
         return null
     }
@@ -112,7 +116,7 @@ internal fun valueProperty(
         null if provider == null && !resolvedType.isMarkedNullable && !required -> {
             checker.report(
                 property,
-                "Property $name is non-nullable and has no initial value; declare it as a val to make it required, declare it with a nullable type, or provide @DslValue.initial."
+                "Property $name is non-nullable and has no initial value; declare it as a val to make it required, declare it with a nullable type, or provide @DslValue.initial.",
             )
             return null
         }
@@ -120,7 +124,7 @@ internal fun valueProperty(
         null if provider == null && mapper != null && !required -> {
             checker.report(
                 property,
-                "Property $name is nullable and has a mapper; provide @DslValue.initial so the stored value is always present."
+                "Property $name is nullable and has a mapper; provide @DslValue.initial so the stored value is always present.",
             )
             return null
         }
@@ -182,14 +186,14 @@ internal fun DslProcessor.listProperty(
     ) {
         checker.report(
             property,
-            "Property $name annotated with @DslList has a type other than MutableList of the element type."
+            "Property $name annotated with @DslList has a type other than MutableList of the element type.",
         )
         return null
     }
     if (resolvedType.isMarkedNullable) {
         checker.report(
             property,
-            "@DslList property $name must not be nullable; the generated list is always present."
+            "@DslList property $name must not be nullable; the generated list is always present.",
         )
         return null
     }
@@ -197,7 +201,7 @@ internal fun DslProcessor.listProperty(
     if (argument.variance != Variance.INVARIANT) {
         checker.report(
             property,
-            "@DslList property $name must not use a use-site projection; declare MutableList of the element type."
+            "@DslList property $name must not use a use-site projection; declare MutableList of the element type.",
         )
         return null
     }
@@ -227,7 +231,7 @@ internal fun DslProcessor.listProperty(
         if (!acceptsChildResult(resolvedElementType, child, checker)) {
             checker.report(
                 property,
-                "Child ${child.specTypeName.canonicalName} produces ${child.resultType.canonicalName}, which is not assignable to the element type $elementTypeName of @DslList property $name."
+                "Child ${child.specTypeName.canonicalName} produces ${child.resultType.canonicalName}, which is not assignable to the element type $elementTypeName of @DslList property $name.",
             )
             return null
         }

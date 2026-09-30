@@ -1,6 +1,12 @@
 package top.ltfan.dslutilities.ksp
 
-import com.google.devtools.ksp.symbol.*
+import com.google.devtools.ksp.symbol.KSClassDeclaration
+import com.google.devtools.ksp.symbol.KSDeclaration
+import com.google.devtools.ksp.symbol.KSFunctionDeclaration
+import com.google.devtools.ksp.symbol.KSPropertyDeclaration
+import com.google.devtools.ksp.symbol.KSType
+import com.google.devtools.ksp.symbol.KSTypeParameter
+import com.google.devtools.ksp.symbol.Modifier
 
 /**
  * A member of a DslBuilder interface together with the type-parameter
@@ -140,7 +146,7 @@ internal class Hierarchy(
             root,
             "Inherited property $name has no unique most-specific declaration" +
                     renderedTypes.takeIf { it.isNotEmpty() }?.let { " among types $it" }.orEmpty() +
-                    "; redeclare it in ${root.simpleName.asString()}."
+                    "; redeclare it in ${root.simpleName.asString()}.",
         )
         return nearest.first()
     }
@@ -180,7 +186,7 @@ internal class Hierarchy(
                 if (resolved.isError) {
                     checker.reportUnresolved(
                         declaration,
-                        "A supertype of the DslBuilder interface ${declaration.simpleName.asString()} is not resolvable yet."
+                        "A supertype of the DslBuilder interface ${declaration.simpleName.asString()} is not resolvable yet.",
                     )
                     return
                 }
@@ -191,7 +197,7 @@ internal class Hierarchy(
                     if (reportedStarProjections.add(key)) {
                         checker.report(
                             declaration,
-                            "Star-projected supertype ${superDeclaration.simpleName.asString()} is not supported by DslBuilder inheritance."
+                            "Star-projected supertype ${superDeclaration.simpleName.asString()} is not supported by DslBuilder inheritance.",
                         )
                     }
                     continue

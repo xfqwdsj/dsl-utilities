@@ -1,6 +1,9 @@
 package top.ltfan.dslutilities.ksp
 
-import com.google.devtools.ksp.symbol.*
+import com.google.devtools.ksp.symbol.KSDeclaration
+import com.google.devtools.ksp.symbol.KSType
+import com.google.devtools.ksp.symbol.KSTypeAlias
+import com.google.devtools.ksp.symbol.KSTypeParameter
 
 /**
  * Resolves type aliases in [type] down to the underlying classifier,
