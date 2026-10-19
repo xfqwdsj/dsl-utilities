@@ -44,3 +44,10 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### Xcode ###
+xcuserdata/
+*.xcuserstate
+
+### Android ###
+local.properties
