@@ -5,6 +5,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.spotless)
     alias(libs.plugins.dokka)
     alias(libs.plugins.mavenPublish)
     signing
@@ -41,6 +42,17 @@ dokka {
             }
             documentedVisibilities(VisibilityModifier.Public, VisibilityModifier.Protected)
         }
+    }
+}
+
+spotless {
+    kotlin {
+        target("src/*/kotlin/**/*.kt")
+        ktfmt().kotlinlangStyle()
+    }
+
+    kotlinGradle {
+        ktfmt().kotlinlangStyle()
     }
 }
 
