@@ -26,20 +26,20 @@ internal val UNSAFE_VARIANCE = ClassName("kotlin", "UnsafeVariance")
 internal val OPT_IN = ClassName("kotlin", "OptIn")
 
 /**
- * Type annotations that are compiler markers rather than user-visible
- * annotations; KotlinPoet expresses their meaning through the type syntax
- * instead of copying them.
+ * Type annotations that are compiler markers rather than user-visible annotations; KotlinPoet
+ * expresses their meaning through the type syntax instead of copying them.
  */
-internal val IGNORED_ANNOTATIONS = setOf(
-    EXTENSION_FUNCTION_TYPE,
-    PARAMETER_NAME,
-    UNSAFE_VARIANCE,
-).mapTo(mutableSetOf()) { it.canonicalName }
+internal val IGNORED_ANNOTATIONS =
+    setOf(
+            EXTENSION_FUNCTION_TYPE,
+            PARAMETER_NAME,
+            UNSAFE_VARIANCE,
+        )
+        .mapTo(mutableSetOf()) { it.canonicalName }
 
 /**
- * Names declared by generated function bodies and the generated builder;
- * the emission templates use the same constants, so a reference that
- * reuses one of them receives an aliased import.
+ * Names declared by generated function bodies and the generated builder; the emission templates use
+ * the same constants, so a reference that reuses one of them receives an aliased import.
  */
 internal const val VALUE_PARAMETER = "newValue"
 internal const val STORED_VALUE = "stored"
@@ -51,12 +51,12 @@ internal const val BUILDER_LOCAL = "builder"
 internal const val CHILD_BUILDER_LOCAL = "childBuilder"
 
 /**
- * The names that every generated body and the builder declare and that
- * the templates emit as fixed text, registered per file up front. The
- * block, builder and child builder locals are allocated per function scope
- * instead, because their names depend on that function's parameter names.
+ * The names that every generated body and the builder declare and that the templates emit as fixed
+ * text, registered per file up front. The block, builder and child builder locals are allocated per
+ * function scope instead, because their names depend on that function's parameter names.
  */
-internal val GENERATED_NAMES = setOf(VALUE_PARAMETER, STORED_VALUE, SNAPSHOT, ELEMENT, BUILD_FUNCTION)
+internal val GENERATED_NAMES =
+    setOf(VALUE_PARAMETER, STORED_VALUE, SNAPSHOT, ELEMENT, BUILD_FUNCTION)
 
 internal val REQUIRE = MemberName("kotlin", "require")
 internal val CHECK = MemberName("kotlin", "check")

@@ -64,8 +64,8 @@ internal class ListProperty(
 }
 
 /**
- * The Kotlin signature of a generated top-level function: its extension
- * receiver, the required value parameters, and the trailing child block.
+ * The Kotlin signature of a generated top-level function: its extension receiver, the required
+ * value parameters, and the trailing child block.
  */
 internal class GeneratedSignature(
     val receiver: KSType?,
@@ -75,9 +75,8 @@ internal class GeneratedSignature(
 )
 
 /**
- * A DslBuilder interface used as a child: its generated builder and
- * result classes are referenced as [ClassName] values so that the parent
- * generated code can construct and build it.
+ * A DslBuilder interface used as a child: its generated builder and result classes are referenced
+ * as [ClassName] values so that the parent generated code can construct and build it.
  */
 internal class ChildSpec(
     val functionName: String,

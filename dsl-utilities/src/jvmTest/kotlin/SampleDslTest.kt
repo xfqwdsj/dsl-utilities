@@ -21,16 +21,17 @@ class SampleDslTest {
 
     @Test
     fun `legal settings are stored`() {
-        val sample = buildSample(name = "required", title = "title") {
-            intToString = "10"
-            genericBaseToString = "20"
-            reorderedToString = "30"
-            evenIntToString = "4"
-            nickname = "nick"
-            prepared = "Prepared"
-            numbers.add(2)
-            numbers.add(4)
-        }
+        val sample =
+            buildSample(name = "required", title = "title") {
+                intToString = "10"
+                genericBaseToString = "20"
+                reorderedToString = "30"
+                evenIntToString = "4"
+                nickname = "nick"
+                prepared = "Prepared"
+                numbers.add(2)
+                numbers.add(4)
+            }
 
         assertEquals("10", sample.intToString)
         assertEquals("20", sample.genericBaseToString)
@@ -43,23 +44,25 @@ class SampleDslTest {
 
     @Test
     fun `optional values accept null after being set`() {
-        val sample = buildSample(name = "required", title = "title") {
-            nickname = "nick"
-            assertEquals("nick", nickname)
-            nickname = null
-            assertNull(nickname)
-        }
+        val sample =
+            buildSample(name = "required", title = "title") {
+                nickname = "nick"
+                assertEquals("nick", nickname)
+                nickname = null
+                assertNull(nickname)
+            }
 
         assertNull(sample.nickname)
     }
 
     @Test
     fun `mapper transforms values on get and set`() {
-        val sample = buildSample(name = "required", title = "title") {
-            assertEquals("DEFAULT", prepared)
-            prepared = "Prepared"
-            assertEquals("PREPARED", prepared)
-        }
+        val sample =
+            buildSample(name = "required", title = "title") {
+                assertEquals("DEFAULT", prepared)
+                prepared = "Prepared"
+                assertEquals("PREPARED", prepared)
+            }
 
         assertEquals("PREPARED", sample.prepared)
     }
@@ -91,10 +94,13 @@ class SampleDslTest {
         val builder = InheritingDslBuilder(extra = 3)
         assertEquals(7, builder.defaulted)
 
-        val inheriting = builder.apply {
-            base = "changed"
-            listStored = "item"
-        }.build()
+        val inheriting =
+            builder
+                .apply {
+                    base = "changed"
+                    listStored = "item"
+                }
+                .build()
 
         assertEquals(3, inheriting.extra)
         assertEquals("changed", inheriting.base)
@@ -103,9 +109,10 @@ class SampleDslTest {
 
     @Test
     fun `inherited generic members take the type arguments`() {
-        val generic = buildGenericInheriting(value = 5) {
-            label = "labeled"
-        }
+        val generic =
+            buildGenericInheriting(value = 5) {
+                label = "labeled"
+            }
 
         assertEquals(5, generic.value)
         assertEquals("labeled", generic.label)
@@ -113,7 +120,7 @@ class SampleDslTest {
 
     @Test
     fun `nested specifications are referenced by qualified name`() {
-        val nested = buildNested { }
+        val nested = buildNested {}
 
         assertEquals("nested", nested.nested)
     }
@@ -145,7 +152,9 @@ class SampleDslTest {
         builder.numbers.add(4)
 
         assertEquals(listOf(2), sample.numbers)
-        assertFailsWith<UnsupportedOperationException> { (sample.numbers as MutableList<Int>).add(6) }
+        assertFailsWith<UnsupportedOperationException> {
+            (sample.numbers as MutableList<Int>).add(6)
+        }
     }
 
     @Test

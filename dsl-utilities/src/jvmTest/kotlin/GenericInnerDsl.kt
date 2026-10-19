@@ -6,26 +6,31 @@ import top.ltfan.dslutilities.DslBuilder
 
 class GenericOuter<T> {
     inner class GenericInner<U> {
-        val owner: GenericOuter<T> get() = this@GenericOuter
+        val owner: GenericOuter<T>
+            get() = this@GenericOuter
     }
 }
 
 class LayeredOuter<T> {
     inner class LayeredMiddle<U> {
-        val owner: LayeredOuter<T> get() = this@LayeredOuter
+        val owner: LayeredOuter<T>
+            get() = this@LayeredOuter
 
         inner class LayeredLeaf<V> {
-            val owner: LayeredMiddle<U> get() = this@LayeredMiddle
+            val owner: LayeredMiddle<U>
+                get() = this@LayeredMiddle
         }
     }
 }
 
 class GappedOuter<T> {
     inner class GappedMiddle {
-        val owner: GappedOuter<T> get() = this@GappedOuter
+        val owner: GappedOuter<T>
+            get() = this@GappedOuter
 
         inner class GappedLeaf<V> {
-            val owner: GappedMiddle get() = this@GappedMiddle
+            val owner: GappedMiddle
+                get() = this@GappedMiddle
         }
     }
 }

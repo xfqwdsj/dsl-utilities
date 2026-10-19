@@ -12,13 +12,10 @@ import com.google.devtools.ksp.symbol.KSDeclaration
 import com.google.devtools.ksp.validate
 
 /**
- * Processes interfaces annotated with
- * [DslBuilder][top.ltfan.dslutilities.DslBuilder] and generates a
- * builder class, an immutable result data class, and a top-level
- * build function for each of them. Child scopes declared with
- * [DslChild][top.ltfan.dslutilities.DslChild] and list children declared
- * through [DslList][top.ltfan.dslutilities.DslList] receive generated
- * composition functions.
+ * Processes interfaces annotated with [DslBuilder][top.ltfan.dslutilities.DslBuilder] and generates
+ * a builder class, an immutable result data class, and a top-level build function for each of them.
+ * Child scopes declared with [DslChild][top.ltfan.dslutilities.DslChild] and list children declared
+ * through [DslList][top.ltfan.dslutilities.DslList] receive generated composition functions.
  */
 class DslProcessor(
     internal val codeGenerator: CodeGenerator,
@@ -27,12 +24,10 @@ class DslProcessor(
 
     internal val generatedTypeOwners = mutableMapOf<String, String>()
 
-    /**
-     * Generated type names by lowercase spelling, so case-only conflicts are
-     * visible.
-     */
+    /** Generated type names by lowercase spelling, so case-only conflicts are visible. */
     internal val generatedTypeSpellings = mutableMapOf<String, String>()
-    internal val generatedFunctionOwners = mutableMapOf<String, MutableList<Pair<String, GeneratedSignature>>>()
+    internal val generatedFunctionOwners =
+        mutableMapOf<String, MutableList<Pair<String, GeneratedSignature>>>()
     internal val generatedPropertyOwners = mutableMapOf<String, String>()
     internal val reportedStarProjections = mutableSetOf<String>()
     internal var packageDeclarations: MutableMap<String, List<KSDeclaration>>? = null

@@ -19,11 +19,10 @@ internal fun KSAnnotated.annotation(qualifiedName: String): KSAnnotation? =
     }
 
 /**
- * Merges the repeated annotations of [sources] into the specs to emit.
- * Each source contributes its own occurrence count; the highest count
- * of any single source wins and the specs keep the order of their first
- * appearance, so repeated annotations of one source stay repeated while
- * overlapping sources do not duplicate them.
+ * Merges the repeated annotations of [sources] into the specs to emit. Each source contributes its
+ * own occurrence count; the highest count of any single source wins and the specs keep the order of
+ * their first appearance, so repeated annotations of one source stay repeated while overlapping
+ * sources do not duplicate them.
  */
 internal fun mergeAnnotations(sources: List<List<AnnotationSpec>>): List<AnnotationSpec> {
     val counts = mutableMapOf<String, Int>()
@@ -42,8 +41,8 @@ internal fun mergeAnnotations(sources: List<List<AnnotationSpec>>): List<Annotat
 }
 
 /**
- * Returns the string argument [name] when the annotation provides it
- * explicitly; an argument that fell back to its default reads as absent.
+ * Returns the string argument [name] when the annotation provides it explicitly; an argument that
+ * fell back to its default reads as absent.
  */
 internal fun KSAnnotation.providedString(name: String): String? {
     val argument = arguments.firstOrNull { it.name?.asString() == name } ?: return null
@@ -55,20 +54,18 @@ internal fun KSDeclaration.isClass(className: ClassName): Boolean =
     qualifiedName?.asString() == className.canonicalName
 
 /**
- * Returns whether this type cannot be rendered as a regular type
- * reference: it is a kept alias (an unbound star projection
- * kept it) or one of its arguments is a star projection.
+ * Returns whether this type cannot be rendered as a regular type reference: it is a kept alias (an
+ * unbound star projection kept it) or one of its arguments is a star projection.
  */
 internal fun KSType.hasUnboundProjection(): Boolean =
     declaration is KSTypeAlias || arguments.any { it.type == null }
 
 /**
- * Returns whether this annotation is the compiler marker [className]. An
- * annotation that resolves to a declaration is matched by its qualified
- * name, so a user annotation that reuses the marker's short name is
- * not mistaken for it. A marker like `kotlin.ExtensionFunctionType`
- * is synthetic: KSP exposes it without a resolvable declaration,
- * so the short name derived from the constant is the fallback.
+ * Returns whether this annotation is the compiler marker [className]. An annotation that resolves
+ * to a declaration is matched by its qualified name, so a user annotation that reuses the marker's
+ * short name is not mistaken for it. A marker like `kotlin.ExtensionFunctionType` is synthetic: KSP
+ * exposes it without a resolvable declaration, so the short name derived from the constant is the
+ * fallback.
  */
 internal fun KSAnnotation.isMarker(className: ClassName): Boolean {
     val qualifiedName = annotationType.resolve().declaration.qualifiedName?.asString()
@@ -83,21 +80,22 @@ internal fun KSAnnotation.isMarker(className: ClassName): Boolean {
 internal fun KSType.isUnit(): Boolean = declaration.isClass(UNIT)
 
 /**
- * Returns `true` when this declaration is compiled from a source file of
- * the module being processed. KSP leaves [KSDeclaration.containingFile]
- * `null` for declarations that come from a compiled dependency.
+ * Returns `true` when this declaration is compiled from a source file of the module being
+ * processed. KSP leaves [KSDeclaration.containingFile] `null` for declarations that come from a
+ * compiled dependency.
  */
 internal fun KSDeclaration.isDeclaredInThisModule(): Boolean = containingFile != null
 
 /**
- * Returns `true` when [declaration] can be referenced from the file the
- * checker generates. An `internal` declaration of another module is not
- * accessible, and a Java package-private declaration is accessible only
- * from the package of that file.
+ * Returns `true` when [declaration] can be referenced from the file the checker generates. An
+ * `internal` declaration of another module is not accessible, and a Java package-private
+ * declaration is accessible only from the package of that file.
  */
 internal fun Checker.isAccessibleFromGeneratedCode(declaration: KSDeclaration): Boolean =
     when (declaration.getVisibility()) {
-        Visibility.PRIVATE, Visibility.PROTECTED, Visibility.LOCAL -> false
+        Visibility.PRIVATE,
+        Visibility.PROTECTED,
+        Visibility.LOCAL -> false
         Visibility.INTERNAL -> declaration.isDeclaredInThisModule()
         Visibility.JAVA_PACKAGE -> declaration.packageName.asString() == generatedPackage
         else -> true

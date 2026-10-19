@@ -18,7 +18,11 @@ private fun writeParameter(
     checker: Checker,
 ): Pair<String, KSType>? {
     val name = function.simpleName.asString()
-    if (function.extensionReceiver != null || function.typeParameters.isNotEmpty() || function.parameters.size != 1) {
+    if (
+        function.extensionReceiver != null ||
+            function.typeParameters.isNotEmpty() ||
+            function.parameters.size != 1
+    ) {
         checker.report(
             function,
             "$annotationName function $name must have one value parameter, no receiver and no type parameters.",
@@ -29,10 +33,15 @@ private fun writeParameter(
         checker.report(function, "$annotationName function $name must not be suspend.")
         return null
     }
-    val returnType = function.returnType?.resolve()
-        ?.let { checker.expandAliases(checker.substituteType(it, environment)) }
+    val returnType =
+        function.returnType?.resolve()?.let {
+            checker.expandAliases(checker.substituteType(it, environment))
+        }
     if (returnType?.isError == true) {
-        checker.reportUnresolved(function, "The return type of $annotationName function $name is not resolvable yet.")
+        checker.reportUnresolved(
+            function,
+            "The return type of $annotationName function $name is not resolvable yet.",
+        )
         return null
     }
     if (returnType?.isUnit() != true) {
@@ -85,22 +94,36 @@ internal fun valueFunction(
     checker: Checker,
 ): ValueProperty? {
     val name = resultName(function, annotation, "@DslValue", checker) ?: return null
-    if (annotation.providedString("initial") != null || annotation.boolean("required") == true ||
-        listOf("provider", "hook", "validator", "mapper").any { annotation.type(it)?.isUnit() == false } ||
-        !annotation.string("message").isNullOrEmpty()
+    if (
+        annotation.providedString("initial") != null ||
+            annotation.boolean("required") == true ||
+            listOf("provider", "hook", "validator", "mapper").any {
+                annotation.type(it)?.isUnit() == false
+            } ||
+            !annotation.string("message").isNullOrEmpty()
     ) {
-        checker.report(function, "@DslValue function ${function.simpleName.asString()} only accepts resultName.")
+        checker.report(
+            function,
+            "@DslValue function ${function.simpleName.asString()} only accepts resultName.",
+        )
         return null
     }
-    val (parameterName, type) = writeParameter(function, environment, "@DslValue", checker) ?: return null
+    val (parameterName, type) =
+        writeParameter(function, environment, "@DslValue", checker) ?: return null
     val resolved = checker.expandAliases(type)
     if (!resolved.isMarkedNullable) {
-        checker.report(function, "@DslValue function ${function.simpleName.asString()} must accept a nullable value.")
+        checker.report(
+            function,
+            "@DslValue function ${function.simpleName.asString()} must accept a nullable value.",
+        )
         return null
     }
     val typeName =
-        checker.renderTypeName(function.parameters.single(), type, function.parameters.single().type.resolve())
-            ?: return null
+        checker.renderTypeName(
+            function.parameters.single(),
+            type,
+            function.parameters.single().type.resolve(),
+        ) ?: return null
     return ValueProperty(
         name = name,
         typeName = typeName,
@@ -126,27 +149,40 @@ internal fun listFunction(
     checker: Checker,
 ): ListProperty? {
     val name = resultName(function, annotation, "@DslList", checker) ?: return null
-    if (annotation.typeArray("children").isNotEmpty() || !annotation.string("scopeName").isNullOrEmpty() ||
-        listOf("hook", "validator").any { annotation.type(it)?.isUnit() == false } ||
-        !annotation.string("message").isNullOrEmpty()
+    if (
+        annotation.typeArray("children").isNotEmpty() ||
+            !annotation.string("scopeName").isNullOrEmpty() ||
+            listOf("hook", "validator").any { annotation.type(it)?.isUnit() == false } ||
+            !annotation.string("message").isNullOrEmpty()
     ) {
-        checker.report(function, "@DslList function ${function.simpleName.asString()} only accepts resultName.")
+        checker.report(
+            function,
+            "@DslList function ${function.simpleName.asString()} only accepts resultName.",
+        )
         return null
     }
-    val (parameterName, type) = writeParameter(function, environment, "@DslList", checker) ?: return null
+    val (parameterName, type) =
+        writeParameter(function, environment, "@DslList", checker) ?: return null
     val resolved = checker.expandAliases(type)
     val typeName =
-        checker.renderTypeName(function.parameters.single(), type, function.parameters.single().type.resolve())
-            ?: return null
-    val listType = checker.resolver.getClassDeclarationByName(
-        checker.resolver.getKSNameFromString(MUTABLE_LIST.canonicalName),
-    ) ?: run {
-        checker.reportUnresolved(function, "MutableList is not resolvable yet.")
-        return null
-    }
-    val argument = checker.resolver.getTypeArgument(
-        checker.resolver.createKSTypeReferenceFromKSType(resolved), Variance.INVARIANT,
-    )
+        checker.renderTypeName(
+            function.parameters.single(),
+            type,
+            function.parameters.single().type.resolve(),
+        ) ?: return null
+    val listType =
+        checker.resolver.getClassDeclarationByName(
+            checker.resolver.getKSNameFromString(MUTABLE_LIST.canonicalName),
+        )
+            ?: run {
+                checker.reportUnresolved(function, "MutableList is not resolvable yet.")
+                return null
+            }
+    val argument =
+        checker.resolver.getTypeArgument(
+            checker.resolver.createKSTypeReferenceFromKSType(resolved),
+            Variance.INVARIANT,
+        )
     return ListProperty(
         name = name,
         typeName = MUTABLE_LIST.parameterizedBy(typeName),

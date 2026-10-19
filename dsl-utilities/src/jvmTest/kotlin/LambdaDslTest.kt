@@ -28,9 +28,10 @@ class LambdaDslTest {
 
     @Test
     fun `generated builder renders function types faithfully`() {
-        val file = File("build/generated/ksp")
-            .walkTopDown()
-            .firstOrNull { it.name == "LambdaDslBuilder.kt" }
+        val file =
+            File("build/generated/ksp").walkTopDown().firstOrNull {
+                it.name == "LambdaDslBuilder.kt"
+            }
         assertNotNull(file, "LambdaDslBuilder.kt was not generated")
         val text = file.readText()
 

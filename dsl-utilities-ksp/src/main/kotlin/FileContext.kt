@@ -14,8 +14,8 @@ internal class ElementFunctions(
 )
 
 /**
- * A class or object reference used as an expression: an object is
- * referenced by name, a class through its no-argument constructor.
+ * A class or object reference used as an expression: an object is referenced by name, a class
+ * through its no-argument constructor.
  */
 internal class Instantiation(
     val type: ClassName,
@@ -25,10 +25,9 @@ internal class Instantiation(
 }
 
 /**
- * The naming state of one generated file: every simple name that the file
- * declares and the aliased imports that references need because of them.
- * Names are registered where they are created, so the registry stays in
- * sync with the generated declarations.
+ * The naming state of one generated file: every simple name that the file declares and the aliased
+ * imports that references need because of them. Names are registered where they are created, so the
+ * registry stays in sync with the generated declarations.
  */
 internal class FileContext(
     private val packageNames: Set<String>,
@@ -37,9 +36,10 @@ internal class FileContext(
     private val fileAllocator = NameAllocator()
     private val aliases = mutableListOf<AliasRequest>()
     private val aliasNames = mutableMapOf<String, String>()
-    private val aliasAllocator = NameAllocator().apply {
-        packageNames.forEach { newName(it) }
-    }
+    private val aliasAllocator =
+        NameAllocator().apply {
+            packageNames.forEach { newName(it) }
+        }
 
     /** Registers a name that the generated file already declares. */
     fun register(name: String) {
@@ -59,10 +59,9 @@ internal class FileContext(
     fun scope(): LocalScope = LocalScope()
 
     /**
-     * Renders a reference to a top-level function or property. The explicit
-     * import that KotlinPoet adds keeps the reference bound to the declaration
-     * even when the package declares one of the same name; a name that is in
-     * scope in the generated file receives an alias.
+     * Renders a reference to a top-level function or property. The explicit import that KotlinPoet
+     * adds keeps the reference bound to the declaration even when the package declares one of the
+     * same name; a name that is in scope in the generated file receives an alias.
      */
     fun member(member: MemberName): CodeBlock {
         val code = CodeBlock.of("%M", member)
@@ -71,10 +70,9 @@ internal class FileContext(
     }
 
     /**
-     * Renders a reference to [type] as an expression. The name stays with
-     * KotlinPoet, which escapes it and manages its import; a name that is in
-     * scope in the generated file receives an alias instead. Nested types
-     * are matched through their top-level class name, which is the name the
+     * Renders a reference to [type] as an expression. The name stays with KotlinPoet, which escapes
+     * it and manages its import; a name that is in scope in the generated file receives an alias
+     * instead. Nested types are matched through their top-level class name, which is the name the
      * rendered reference starts with.
      */
     fun expression(type: ClassName, construct: Boolean = false): CodeBlock {
@@ -94,9 +92,9 @@ internal class FileContext(
         private val allocator = NameAllocator()
 
         /**
-         * Reserves a name that the generated function body declares as a
-         * user-written parameter. The name is kept as written; the scope allocator
-         * only learns it, so generated locals avoid it.
+         * Reserves a name that the generated function body declares as a user-written parameter.
+         * The name is kept as written; the scope allocator only learns it, so generated locals
+         * avoid it.
          */
         fun register(name: String) {
             allocator.newName(name)
@@ -113,18 +111,18 @@ internal class FileContext(
 
     private fun aliasOfType(type: ClassName): String =
         aliasNames.getOrPut(type.canonicalName) {
-            aliasAllocator.newName("${type.simpleName}Ref")
-                .also {
-                    aliases += AliasRequest.Type(type, it)
-                    // The alias is a name of this file, so a reference that
-                    // reuses it receives its own alias.
-                    names += it
-                }
+            aliasAllocator.newName("${type.simpleName}Ref").also {
+                aliases += AliasRequest.Type(type, it)
+                // The alias is a name of this file, so a reference that
+                // reuses it receives its own alias.
+                names += it
+            }
         }
 
     private fun aliasOfMember(member: MemberName): String =
         aliasNames.getOrPut(member.canonicalName) {
-            aliasAllocator.newName("stdlib${member.simpleName.replaceFirstChar { it.uppercase() }}")
+            aliasAllocator
+                .newName("stdlib${member.simpleName.replaceFirstChar { it.uppercase() }}")
                 .also {
                     aliases += AliasRequest.Member(member, it)
                     names += it

@@ -39,7 +39,7 @@ class CompositionDslTest {
     @Test
     fun `repeated child scope invocations replace the stored child`() {
         val pattern = buildPattern {
-            events { }
+            events {}
             events {
                 transientEvent { intensity = 0.5f }
             }
@@ -78,7 +78,9 @@ class CompositionDslTest {
     fun `generated build and element functions are inline`() {
         fun buildOrNull(): Events? {
             buildEvents {
-                transientEvent { return null }
+                transientEvent {
+                    return null
+                }
             }
             return null
         }

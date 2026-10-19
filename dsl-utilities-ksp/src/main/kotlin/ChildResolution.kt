@@ -15,10 +15,9 @@ import com.squareup.kotlinpoet.KModifier
 import com.squareup.kotlinpoet.ksp.toClassName
 
 /**
- * Child scopes are declared as `@DslChild` functions whose last parameter
- * is a function type with the child DslBuilder interface as receiver and
- * whose other parameters carry the required properties of the child; the
- * processor generates the function body.
+ * Child scopes are declared as `@DslChild` functions whose last parameter is a function type with
+ * the child DslBuilder interface as receiver and whose other parameters carry the required
+ * properties of the child; the processor generates the function body.
  */
 internal fun DslProcessor.childScope(
     name: String,
@@ -39,10 +38,15 @@ internal fun DslProcessor.childScope(
     // like one without them and the generated override omits the requirement,
     // leaving the builder unable to implement the function. Support for
     // context parameters starts here.
-    val functionReturnType = function.returnType?.resolve()
-        ?.let { checker.expandAliases(checker.substituteType(it, environment)) }
+    val functionReturnType =
+        function.returnType?.resolve()?.let {
+            checker.expandAliases(checker.substituteType(it, environment))
+        }
     if (functionReturnType?.isError == true) {
-        checker.reportUnresolved(function, "The return type of @DslChild function $name is not resolvable yet.")
+        checker.reportUnresolved(
+            function,
+            "The return type of @DslChild function $name is not resolvable yet.",
+        )
         return null
     }
     if (functionReturnType?.isUnit() != true) {
@@ -58,17 +62,28 @@ internal fun DslProcessor.childScope(
         return null
     }
     val blockParameter = parameters.last()
-    val blockName = blockParameter.name?.asString() ?: run {
-        checker.report(function, "The block parameter of @DslChild function $name has no name.")
-        return null
-    }
+    val blockName =
+        blockParameter.name?.asString()
+            ?: run {
+                checker.report(
+                    function,
+                    "The block parameter of @DslChild function $name has no name.",
+                )
+                return null
+            }
     if (blockParameter.isVararg) {
-        checker.report(function, "The block parameter of @DslChild function $name must not be vararg.")
+        checker.report(
+            function,
+            "The block parameter of @DslChild function $name must not be vararg.",
+        )
         return null
     }
     val declaredBlockType = blockParameter.type.resolve()
     if (declaredBlockType.isError) {
-        checker.reportUnresolved(function, "The last parameter of @DslChild function $name is not resolvable yet.")
+        checker.reportUnresolved(
+            function,
+            "The last parameter of @DslChild function $name is not resolvable yet.",
+        )
         return null
     }
     // The block type of a child scope inherited from a generic base
@@ -79,22 +94,27 @@ internal fun DslProcessor.childScope(
     // shape once it is substituted.
     val substitutedBlockType = checker.substituteType(declaredBlockType, environment)
     val bareParameter = declaredBlockType.declaration is KSTypeParameter
-    val blockShape = if (bareParameter) {
-        checker.aliasTarget(substitutedBlockType)
-    } else {
-        checker.aliasTarget(declaredBlockType)
-    }
+    val blockShape =
+        if (bareParameter) {
+            checker.aliasTarget(substitutedBlockType)
+        } else {
+            checker.aliasTarget(declaredBlockType)
+        }
     if (blockShape.isMarkedNullable) {
-        checker.report(function, "The block parameter of @DslChild function $name must not be nullable.")
+        checker.report(
+            function,
+            "The block parameter of @DslChild function $name must not be nullable.",
+        )
         return null
     }
     val isReceiverStyle = blockShape.annotations.any { it.isMarker(EXTENSION_FUNCTION_TYPE) }
     val isSuspend = blockShape.isSuspendFunctionType
-    val blockType = if (bareParameter) {
-        checker.expandAliases(substitutedBlockType)
-    } else {
-        checker.substituteType(checker.expandAliases(declaredBlockType), environment)
-    }
+    val blockType =
+        if (bareParameter) {
+            checker.expandAliases(substitutedBlockType)
+        } else {
+            checker.substituteType(checker.expandAliases(declaredBlockType), environment)
+        }
     val arguments = blockType.arguments
     // A star projection that the alias target uses cannot be rendered; a
     // kept alias always carries one somewhere in its chain. Report the
@@ -114,33 +134,42 @@ internal fun DslProcessor.childScope(
         )
         return null
     }
-    if ((!blockShape.isFunctionType && !isSuspend) || arguments.size != (if (isReceiverStyle) 2 else 1)) {
+    if (
+        (!blockShape.isFunctionType && !isSuspend) ||
+            arguments.size != (if (isReceiverStyle) 2 else 1)
+    ) {
         // The dedicated message fits when a leading parameter is the
         // misplaced block: its receiver is a DslBuilder interface that
         // requires the last parameter. Otherwise the last parameter is
         // most likely the block itself with a type that does not fit.
         val lastParameterName = parameters.lastOrNull()?.name?.asString()
-        val misplacedBlock = !blockShape.isFunctionType && !isSuspend && lastParameterName != null &&
+        val misplacedBlock =
+            !blockShape.isFunctionType &&
+                !isSuspend &&
+                lastParameterName != null &&
                 parameters.dropLast(1).any { parameter ->
                     val declaredParameterType = parameter.type.resolve()
-                    val parameterShape = checker.aliasTarget(
-                        if (declaredParameterType.declaration is KSTypeParameter) {
-                            checker.substituteType(declaredParameterType, environment)
-                        } else {
-                            declaredParameterType
-                        },
-                    )
+                    val parameterShape =
+                        checker.aliasTarget(
+                            if (declaredParameterType.declaration is KSTypeParameter) {
+                                checker.substituteType(declaredParameterType, environment)
+                            } else {
+                                declaredParameterType
+                            },
+                        )
                     if (
                         !parameterShape.isFunctionType ||
-                        parameterShape.annotations.none { it.isMarker(EXTENSION_FUNCTION_TYPE) }
+                            parameterShape.annotations.none { it.isMarker(EXTENSION_FUNCTION_TYPE) }
                     ) {
                         return@any false
                     }
-                    val receiverType = parameterShape.arguments.firstOrNull()?.type?.resolve() ?: return@any false
-                    val receiver = checker.expandAliases(receiverType).declaration as? KSClassDeclaration
-                        ?: return@any false
+                    val receiverType =
+                        parameterShape.arguments.firstOrNull()?.type?.resolve() ?: return@any false
+                    val receiver =
+                        checker.expandAliases(receiverType).declaration as? KSClassDeclaration
+                            ?: return@any false
                     receiver.annotation(DSL_BUILDER_ANNOTATION) != null &&
-                            requiresProperty(receiver, lastParameterName)
+                        requiresProperty(receiver, lastParameterName)
                 }
         checker.report(
             function,
@@ -170,31 +199,35 @@ internal fun DslProcessor.childScope(
         return null
     }
     val blockReturnType = arguments.last().type?.resolve()?.let { checker.expandAliases(it) }
-    if (blockReturnType == null ||
-        !blockReturnType.isUnit() ||
-        blockReturnType.isMarkedNullable
-    ) {
+    if (blockReturnType == null || !blockReturnType.isUnit() || blockReturnType.isMarkedNullable) {
         checker.report(
             function,
             "The last parameter of @DslChild function $name must return Unit.",
         )
         return null
     }
-    val receiverType = arguments[0].type?.resolve()?.let { checker.expandAliases(it) } ?: run {
-        checker.report(
-            function,
-            "The last parameter of @DslChild function $name must be a function type with the child DslBuilder interface as receiver.",
-        )
-        return null
-    }
+    val receiverType =
+        arguments[0].type?.resolve()?.let { checker.expandAliases(it) }
+            ?: run {
+                checker.report(
+                    function,
+                    "The last parameter of @DslChild function $name must be a function type with the child DslBuilder interface as receiver.",
+                )
+                return null
+            }
     if (receiverType.isMarkedNullable) {
         checker.report(function, "The receiver of @DslChild function $name must not be nullable.")
         return null
     }
-    val childDeclaration = receiverType.declaration as? KSClassDeclaration ?: run {
-        checker.report(function, "The receiver of @DslChild function $name must be a DslBuilder interface.")
-        return null
-    }
+    val childDeclaration =
+        receiverType.declaration as? KSClassDeclaration
+            ?: run {
+                checker.report(
+                    function,
+                    "The receiver of @DslChild function $name must be a DslBuilder interface.",
+                )
+                return null
+            }
     val child = resolveChild(childDeclaration, checker) ?: return null
     val declaredParameters = parameters.dropLast(1)
     if (declaredParameters.size != child.required.size) {
@@ -206,18 +239,23 @@ internal fun DslProcessor.childScope(
     }
     val scopeParameters = mutableListOf<Parameter>()
     for ((parameter, required) in declaredParameters.zip(child.required)) {
-        val parameterName = parameter.name?.asString() ?: run {
-            checker.report(function, "A parameter of @DslChild function $name has no name.")
-            return null
-        }
+        val parameterName =
+            parameter.name?.asString()
+                ?: run {
+                    checker.report(function, "A parameter of @DslChild function $name has no name.")
+                    return null
+                }
         if (parameter.isVararg) {
-            checker.report(function, "Parameter $parameterName of @DslChild function $name must not be vararg.")
+            checker.report(
+                function,
+                "Parameter $parameterName of @DslChild function $name must not be vararg.",
+            )
             return null
         }
         val declarationParameterType = parameter.type.resolve()
         val parameterType = checker.substituteType(declarationParameterType, environment)
-        val parameterTypeName = checker.renderTypeName(function, parameterType, declarationParameterType)
-            ?: return null
+        val parameterTypeName =
+            checker.renderTypeName(function, parameterType, declarationParameterType) ?: return null
         if (parameterName != required.name || !required.type.isAssignableFrom(parameterType)) {
             checker.report(
                 function,
@@ -227,25 +265,31 @@ internal fun DslProcessor.childScope(
         }
         scopeParameters += Parameter(parameterName, parameterTypeName)
     }
-    val blockTypeName = checker.renderTypeName(
-        function,
-        checker.substituteType(declaredBlockType, environment),
-        declaredBlockType,
-    ) ?: return null
+    val blockTypeName =
+        checker.renderTypeName(
+            function,
+            checker.substituteType(declaredBlockType, environment),
+            declaredBlockType,
+        ) ?: return null
     return ChildScope(name, scopeParameters, blockName, blockTypeName, child)
 }
 
 /**
- * Resolves a DslBuilder interface referenced as a child scope or as a list
- * child. The builder and result classes of the child follow the naming
- * rules of generated top-level classes, so children resolve across module
- * boundaries as well.
+ * Resolves a DslBuilder interface referenced as a child scope or as a list child. The builder and
+ * result classes of the child follow the naming rules of generated top-level classes, so children
+ * resolve across module boundaries as well.
  */
-internal fun DslProcessor.resolveChild(declaration: KSClassDeclaration, checker: Checker): ChildSpec? {
+internal fun DslProcessor.resolveChild(
+    declaration: KSClassDeclaration,
+    checker: Checker,
+): ChildSpec? {
     val specName = declaration.simpleName.asString()
     val annotation = declaration.annotation(DSL_BUILDER_ANNOTATION)
     if (annotation == null) {
-        checker.report(declaration, "$specName must be annotated with @DslBuilder to be used as a child.")
+        checker.report(
+            declaration,
+            "$specName must be annotated with @DslBuilder to be used as a child.",
+        )
         return null
     }
     if (declaration.classKind != ClassKind.INTERFACE) {
@@ -270,9 +314,11 @@ internal fun DslProcessor.resolveChild(declaration: KSClassDeclaration, checker:
     val packageName = declaration.packageName.asString()
     val builderVisibility = effectiveVisibility(declaration, checker) ?: return null
     val diagnostics = checker.diagnosticCount
-    val resultSupertype = resolveResultSupertype(declaration, annotation, checker, checkSubclassing = false)
+    val resultSupertype =
+        resolveResultSupertype(declaration, annotation, checker, checkSubclassing = false)
     if (checker.diagnosticCount != diagnostics) return null
-    val resultVisibility = restrictiveVisibility(listOfNotNull(builderVisibility, resultSupertype?.visibility))
+    val resultVisibility =
+        restrictiveVisibility(listOfNotNull(builderVisibility, resultSupertype?.visibility))
     if (resultVisibility == KModifier.INTERNAL && !declaration.isDeclaredInThisModule()) {
         checker.report(
             declaration,
@@ -282,19 +328,21 @@ internal fun DslProcessor.resolveChild(declaration: KSClassDeclaration, checker:
     }
     val hierarchy = Hierarchy(checker, reportedStarProjections)
     val required = mutableListOf<RequiredProperty>()
-    for (member in hierarchy.allProperties(declaration).filter { hierarchy.isAbstract(it.declaration) }) {
+    for (member in
+        hierarchy.allProperties(declaration).filter { hierarchy.isAbstract(it.declaration) }) {
         val property = member.declaration
         if (property.isMutable) continue
         val declarationType = property.type.resolve()
         val type = checker.substituteType(declarationType, member.environment)
         val typeName = checker.renderTypeName(property, type, declarationType) ?: return null
-        required += RequiredProperty(
-            property.simpleName.asString(),
-            typeName,
-            checker.expandAliases(type),
-            null,
-            "",
-        )
+        required +=
+            RequiredProperty(
+                property.simpleName.asString(),
+                typeName,
+                checker.expandAliases(type),
+                null,
+                "",
+            )
     }
     return ChildSpec(
         functionName = decapitalize(derivedBaseName(specName)),
@@ -306,16 +354,15 @@ internal fun DslProcessor.resolveChild(declaration: KSClassDeclaration, checker:
         builderVisibility = builderVisibility,
         resultVisibility = resultVisibility,
         required = required,
-        requiresConfiguration = annotation.boolean("requireConfiguration") == true ||
-                hierarchy.abstractFunctions(declaration)
-                    .any { it.declaration.annotation(DSL_CHILD_ANNOTATION) != null },
+        requiresConfiguration =
+            annotation.boolean("requireConfiguration") == true ||
+                hierarchy.abstractFunctions(declaration).any {
+                    it.declaration.annotation(DSL_CHILD_ANNOTATION) != null
+                },
     )
 }
 
-/**
- * Resolves and validates the optional interface implemented by a generated
- * result.
- */
+/** Resolves and validates the optional interface implemented by a generated result. */
 internal fun resolveResultSupertype(
     spec: KSClassDeclaration,
     annotation: KSAnnotation?,
@@ -362,32 +409,32 @@ internal fun restrictiveVisibility(visibilities: Iterable<KModifier>): KModifier
     if (KModifier.INTERNAL in visibilities) KModifier.INTERNAL else KModifier.PUBLIC
 
 /**
- * Returns `true` when a supertype property of type [expectedType] can be
- * overridden by the generated concrete result of [child]. The result class
- * is generated in the same round, so its declared result supertype and its
- * qualified name stand in for the class itself; the result is a non-null
- * class, so `Any` accepts it.
+ * Returns `true` when a supertype property of type [expectedType] can be overridden by the
+ * generated concrete result of [child]. The result class is generated in the same round, so its
+ * declared result supertype and its qualified name stand in for the class itself; the result is a
+ * non-null class, so `Any` accepts it.
  */
 internal fun acceptsChildResult(expectedType: KSType, child: ChildSpec, checker: Checker): Boolean {
     val resolvedExpected = checker.expandAliases(expectedType)
     val expectedName = resolvedExpected.makeNotNullable().declaration.qualifiedName?.asString()
     return expectedName == ANY.canonicalName ||
-            expectedName == child.resultType.canonicalName ||
-            child.resultSupertype?.let { resolvedExpected.isAssignableFrom(it) } == true
+        expectedName == child.resultType.canonicalName ||
+        child.resultSupertype?.let { resolvedExpected.isAssignableFrom(it) } == true
 }
 
 /**
- * Returns the visibility the generated declarations need to reference the
- * specification from the generated top-level file: the most restrictive
- * visibility found along the declaration chain, or `null` after
- * reporting when no generated declaration can reference the spec at all.
+ * Returns the visibility the generated declarations need to reference the specification from the
+ * generated top-level file: the most restrictive visibility found along the declaration chain, or
+ * `null` after reporting when no generated declaration can reference the spec at all.
  */
 internal fun effectiveVisibility(spec: KSDeclaration, checker: Checker): KModifier? {
     var internal = false
     var declaration: KSDeclaration? = spec
     while (declaration != null) {
         when (declaration.getVisibility()) {
-            Visibility.PRIVATE, Visibility.PROTECTED, Visibility.LOCAL -> {
+            Visibility.PRIVATE,
+            Visibility.PROTECTED,
+            Visibility.LOCAL -> {
                 checker.report(
                     spec,
                     "The DslBuilder interface ${spec.simpleName.asString()} must be visible from the package level, but it is hidden by ${declaration.simpleName.asString()}.",

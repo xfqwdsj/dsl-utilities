@@ -8,6 +8,5 @@ import top.ltfan.dslutilities.test.collision.toList
 interface ToListTypeCaptureDsl {
     val other: toList
 
-    @DslList
-    var items: MutableList<Int>
+    @DslList var items: MutableList<Int>
 }

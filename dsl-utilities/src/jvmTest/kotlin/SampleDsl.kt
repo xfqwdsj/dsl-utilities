@@ -58,14 +58,11 @@ interface SampleDsl {
     @DslValue(validator = NonBlankValidator::class, message = "The title must not be blank.")
     val title: String
 
-    @DslValue(initial = "1", mapper = IntStringMapper::class)
-    var intToString: String
+    @DslValue(initial = "1", mapper = IntStringMapper::class) var intToString: String
 
-    @DslValue(initial = "2", mapper = GenericBaseMapper::class)
-    var genericBaseToString: String
+    @DslValue(initial = "2", mapper = GenericBaseMapper::class) var genericBaseToString: String
 
-    @DslValue(initial = "3", mapper = ReorderedMapper::class)
-    var reorderedToString: String
+    @DslValue(initial = "3", mapper = ReorderedMapper::class) var reorderedToString: String
 
     @DslValue(
         initial = "2",
@@ -75,11 +72,9 @@ interface SampleDsl {
     )
     var evenIntToString: String
 
-    @DslValue
-    var nickname: String?
+    @DslValue var nickname: String?
 
-    @DslValue(initial = "default", mapper = UpperCaseMapper::class)
-    var prepared: String
+    @DslValue(initial = "default", mapper = UpperCaseMapper::class) var prepared: String
 
     @DslList(validator = PositiveIntValidator::class, message = "The elements must be positive.")
     var numbers: MutableList<Int>
@@ -105,8 +100,7 @@ interface Named {
 interface BaseDsl {
     val extra: Int
 
-    @DslValue(initial = "base")
-    var base: String
+    @DslValue(initial = "base") var base: String
 
     val defaulted: Int
         get() = 7
@@ -126,83 +120,68 @@ object NamesToListMapper : ListStoredBase<String>() {
 
 @DslBuilder
 interface InheritingDsl : BaseDsl {
-    @DslValue(initial = "own")
-    var own: String
+    @DslValue(initial = "own") var own: String
 
-    @DslValue(initial = "x", mapper = NamesToListMapper::class)
-    var listStored: String
+    @DslValue(initial = "x", mapper = NamesToListMapper::class) var listStored: String
 
-    @DslValue(initial = "0")
-    var limited: @MaxBytes(2) String
+    @DslValue(initial = "0") var limited: @MaxBytes(2) String
 }
 
 @DslBuilder
 interface GenericInheritingDsl : GenericBaseDsl<Int> {
-    @DslValue
-    var label: String?
+    @DslValue var label: String?
 }
 
 class Containers {
     @DslBuilder
     interface NestedDsl {
-        @DslValue(initial = "nested")
-        var nested: String
+        @DslValue(initial = "nested") var nested: String
     }
 }
 
 @DslBuilder
 internal interface InternalDsl {
-    @DslValue(initial = "hidden")
-    var hidden: String
+    @DslValue(initial = "hidden") var hidden: String
 }
 
 @DslBuilder
 interface InvalidNullableDsl {
-    @DslValue(validator = NoNullStringValidator::class)
-    var nickname: String?
+    @DslValue(validator = NoNullStringValidator::class) var nickname: String?
 }
 
 @DslBuilder
 interface NullableDsl {
-    @DslValue(initial = "fan", validator = NoNullStringValidator::class)
-    var nickname: String?
+    @DslValue(initial = "fan", validator = NoNullStringValidator::class) var nickname: String?
 }
 
 @DslBuilder
 interface Config {
-    @DslValue(initial = "8080")
-    var port: Int
+    @DslValue(initial = "8080") var port: Int
 
-    @DslValue
-    var host: String?
+    @DslValue var host: String?
 
-    @DslList
-    var tags: MutableList<String>
+    @DslList var tags: MutableList<String>
 }
 
 sealed interface SampleEvent
 
 @DslBuilder(supertype = SampleEvent::class)
 interface TransientEventDsl {
-    @DslValue
-    var intensity: Float?
+    @DslValue var intensity: Float?
 
-    @DslValue
-    var sharpness: Float?
+    @DslValue var sharpness: Float?
 }
 
 @DslBuilder(supertype = SampleEvent::class)
 interface ContinuousEventDsl {
-    @DslValue
-    var duration: Int?
+    @DslValue var duration: Int?
 }
 
 @DslBuilder(supertype = SampleEvent::class)
 interface TimedEventDsl {
     val at: Int
 
-    @DslValue
-    var label: String?
+    @DslValue var label: String?
 }
 
 @DslBuilder
@@ -214,20 +193,17 @@ interface EventsDsl {
     )
     var events: MutableList<SampleEvent>
 
-    @DslValue
-    var title: String?
+    @DslValue var title: String?
 }
 
 @DslBuilder
 interface PatternDsl {
-    @DslChild
-    fun events(block: EventsDsl.() -> Unit = {})
+    @DslChild fun events(block: EventsDsl.() -> Unit = {})
 }
 
 @DslBuilder
 interface HolderDsl {
-    @DslChild
-    fun event(at: Int, block: TimedEventDsl.() -> Unit = {})
+    @DslChild fun event(at: Int, block: TimedEventDsl.() -> Unit = {})
 }
 
 @DslBuilder(
@@ -236,17 +212,14 @@ interface HolderDsl {
     functionName = "palette",
 )
 interface PaletteDsl {
-    @DslValue(initial = "black")
-    var background: String
+    @DslValue(initial = "black") var background: String
 }
 
 @DslBuilder(generateFunction = false)
 interface GradientDsl {
-    @DslValue(initial = "0")
-    var from: Int
+    @DslValue(initial = "0") var from: Int
 
-    @DslValue(initial = "255")
-    var to: Int
+    @DslValue(initial = "255") var to: Int
 }
 
 object GradientFactory {
@@ -257,28 +230,21 @@ object GradientFactory {
     }
 }
 
-@Target(AnnotationTarget.TYPE)
-annotation class TypeMark
+@Target(AnnotationTarget.TYPE) annotation class TypeMark
 
 @DslBuilder
 interface LambdaDsl {
-    @DslValue
-    var plain: (() -> Unit)?
+    @DslValue var plain: (() -> Unit)?
 
-    @DslValue
-    var withReceiver: (String.() -> Unit)?
+    @DslValue var withReceiver: (String.() -> Unit)?
 
-    @DslValue
-    var withParameters: ((x: Int, y: String) -> Boolean)?
+    @DslValue var withParameters: ((x: Int, y: String) -> Boolean)?
 
-    @DslValue
-    var marked: (@TypeMark () -> Unit)?
+    @DslValue var marked: (@TypeMark () -> Unit)?
 
-    @DslValue
-    var markedWithReceiver: (@TypeMark String.() -> Unit)?
+    @DslValue var markedWithReceiver: (@TypeMark String.() -> Unit)?
 
-    @DslValue
-    var suspending: (suspend () -> Unit)?
+    @DslValue var suspending: (suspend () -> Unit)?
 }
 
 interface Defaulted {
@@ -288,41 +254,33 @@ interface Defaulted {
 
 @DslBuilder(supertype = Defaulted::class)
 interface OverridingDsl {
-    @DslValue(initial = "default")
-    var label: String
+    @DslValue(initial = "default") var label: String
 }
 
-@DslBuilder(supertype = Defaulted::class)
-interface InheritingDefaultDsl
+@DslBuilder(supertype = Defaulted::class) interface InheritingDefaultDsl
 
 @DslBuilder
 internal interface ShorthandDsl {
-    @DslList(children = [TransientEventDsl::class])
-    var items: MutableList<SampleEvent>
+    @DslList(children = [TransientEventDsl::class]) var items: MutableList<SampleEvent>
 }
 
 interface GenericChildBase<T> {
-    @DslChild
-    fun child(block: T.() -> Unit)
+    @DslChild fun child(block: T.() -> Unit)
 }
 
-@DslBuilder
-interface GenericChildScopeDsl : GenericChildBase<TransientEventDsl>
+@DslBuilder interface GenericChildScopeDsl : GenericChildBase<TransientEventDsl>
 
 interface GenericChildReturnBase<R> {
-    @DslChild
-    fun child(block: TransientEventDsl.() -> Unit): R
+    @DslChild fun child(block: TransientEventDsl.() -> Unit): R
 }
 
-@DslBuilder
-interface GenericUnitChildReturnDsl : GenericChildReturnBase<Unit>
+@DslBuilder interface GenericUnitChildReturnDsl : GenericChildReturnBase<Unit>
 
 interface NullableGenericBase<T> {
     val nullableValue: T?
 }
 
-@DslBuilder
-interface NullableGenericDsl : NullableGenericBase<String>
+@DslBuilder interface NullableGenericDsl : NullableGenericBase<String>
 
 interface AbstractDefaultRoot {
     val inheritedLabel: String
@@ -333,16 +291,13 @@ interface ConcreteDefault : AbstractDefaultRoot {
         get() = "inherited"
 }
 
-@DslBuilder
-interface ConcreteShadowDsl : ConcreteDefault
+@DslBuilder interface ConcreteShadowDsl : ConcreteDefault
 
 @DslBuilder
 interface SeparateListsDsl {
-    @DslList(children = [TransientEventDsl::class])
-    var transientEvents: MutableList<SampleEvent>
+    @DslList(children = [TransientEventDsl::class]) var transientEvents: MutableList<SampleEvent>
 
-    @DslList(children = [ContinuousEventDsl::class])
-    var continuousEvents: MutableList<SampleEvent>
+    @DslList(children = [ContinuousEventDsl::class]) var continuousEvents: MutableList<SampleEvent>
 }
 
 @DslBuilder
@@ -381,26 +336,22 @@ interface BlockChildDsl {
 
 @DslBuilder
 interface BlockListDsl {
-    @DslList(children = [BlockChildDsl::class])
-    var items: MutableList<BlockItem>
+    @DslList(children = [BlockChildDsl::class]) var items: MutableList<BlockItem>
 }
 
 @DslBuilder
 interface BlockScopeHolderDsl {
-    @DslChild
-    fun child(block: String, configure: BlockChildDsl.() -> Unit = {})
+    @DslChild fun child(block: String, configure: BlockChildDsl.() -> Unit = {})
 }
 
 @DslBuilder
 internal interface InternalListChildDsl {
-    @DslValue(initial = "internal")
-    var value: String
+    @DslValue(initial = "internal") var value: String
 }
 
 @DslBuilder
 interface PublicInternalChildListDsl {
-    @DslList(children = [InternalListChildDsl::class])
-    var items: MutableList<Any>
+    @DslList(children = [InternalListChildDsl::class]) var items: MutableList<Any>
 }
 
 internal interface InternalChildResult {
@@ -409,20 +360,17 @@ internal interface InternalChildResult {
 
 @DslBuilder(supertype = InternalChildResult::class)
 interface PublicInternalResultChildDsl {
-    @DslValue(initial = "internal-result")
-    var value: String
+    @DslValue(initial = "internal-result") var value: String
 }
 
 @DslBuilder
 interface PublicInternalResultListDsl {
-    @DslList(children = [PublicInternalResultChildDsl::class])
-    var items: MutableList<Any>
+    @DslList(children = [PublicInternalResultChildDsl::class]) var items: MutableList<Any>
 }
 
 @DslBuilder
 interface PublicInternalResultScopeDsl {
-    @DslChild
-    fun child(block: PublicInternalResultChildDsl.() -> Unit = {})
+    @DslChild fun child(block: PublicInternalResultChildDsl.() -> Unit = {})
 }
 
 interface WideDiamondProperty {
@@ -433,47 +381,39 @@ interface NarrowDiamondProperty {
     val value: String
 }
 
-@DslBuilder
-interface DiamondPropertyDsl : WideDiamondProperty, NarrowDiamondProperty
+@DslBuilder interface DiamondPropertyDsl : WideDiamondProperty, NarrowDiamondProperty
 
 @DslBuilder
 interface RequiredNestedChildDsl {
-    @DslChild
-    fun event(block: TransientEventDsl.() -> Unit = {})
+    @DslChild fun event(block: TransientEventDsl.() -> Unit = {})
 }
 
 @DslBuilder
 interface RequiredNestedListDsl {
-    @DslList(children = [RequiredNestedChildDsl::class])
-    var items: MutableList<Any>
+    @DslList(children = [RequiredNestedChildDsl::class]) var items: MutableList<Any>
 }
 
 @DslBuilder
 interface BackingNamesDsl {
-    @DslValue(initial = "name")
-    var name: String
+    @DslValue(initial = "name") var name: String
 
-    @DslValue(initial = "field")
-    var nameField: String
+    @DslValue(initial = "field") var nameField: String
 
-    @DslList
-    var items: MutableList<String>
+    @DslList var items: MutableList<String>
 
-    @DslValue(initial = "items")
-    var itemsField: String
+    @DslValue(initial = "items") var itemsField: String
 
-    @DslValue(initial = "child")
-    var childField: String
+    @DslValue(initial = "child") var childField: String
 
-    @DslChild
-    fun child(block: TransientEventDsl.() -> Unit = {})
+    @DslChild fun child(block: TransientEventDsl.() -> Unit = {})
 }
 
 class DefaultArgumentValidator(private val expected: String = "valid") : DslValidator<String> {
     override fun validate(value: String): Boolean = value == expected
 }
 
-class SecondaryConstructorValidator private constructor(private val expected: String) : DslValidator<String> {
+class SecondaryConstructorValidator private constructor(private val expected: String) :
+    DslValidator<String> {
     constructor() : this("valid-secondary")
 
     override fun validate(value: String): Boolean = value == expected
@@ -481,8 +421,7 @@ class SecondaryConstructorValidator private constructor(private val expected: St
 
 @DslBuilder
 interface ConstructorValidatorDsl {
-    @DslValue(initial = "valid", validator = DefaultArgumentValidator::class)
-    var value: String
+    @DslValue(initial = "valid", validator = DefaultArgumentValidator::class) var value: String
 
     @DslValue(initial = "valid-secondary", validator = SecondaryConstructorValidator::class)
     var secondary: String
@@ -495,24 +434,26 @@ interface ConcreteBackingName {
 
 @DslBuilder
 interface ConcreteBackingDsl : ConcreteBackingName {
-    @DslValue(initial = "name")
-    var name: String
+    @DslValue(initial = "name") var name: String
 }
 
 typealias AliasedTransientBlock = TransientEventDsl.() -> Unit
+
 typealias AliasedUnit = Unit
+
 typealias AliasedMarkedString = String
+
 typealias AliasedIntList = MutableList<Int>
+
 typealias AliasedValidator = NonBlankValidator
+
 typealias AliasedBase = BaseDsl
 
 @DslBuilder
 interface AliasedChildScopeDsl {
-    @DslChild
-    fun aliasedChild(block: AliasedTransientBlock)
+    @DslChild fun aliasedChild(block: AliasedTransientBlock)
 
-    @DslChild
-    fun aliasedUnitChild(block: TransientEventDsl.() -> AliasedUnit = {})
+    @DslChild fun aliasedUnitChild(block: TransientEventDsl.() -> AliasedUnit = {})
 }
 
 @DslBuilder
@@ -522,24 +463,20 @@ interface AliasedAnnotationDsl {
 
 @DslBuilder
 interface AliasedListDsl {
-    @DslList
-    var values: AliasedIntList
+    @DslList var values: AliasedIntList
 }
 
 @DslBuilder
 interface AliasedValueDsl {
-    @DslValue(initial = "alias", validator = AliasedValidator::class)
-    var value: AliasedMarkedString
+    @DslValue(initial = "alias", validator = AliasedValidator::class) var value: AliasedMarkedString
 }
 
 @DslBuilder
 interface AliasedInheritanceDsl : AliasedBase {
-    @DslValue(initial = "alias-own")
-    var aliasOwn: String
+    @DslValue(initial = "alias-own") var aliasOwn: String
 }
 
-@DslBuilder
-interface OverloadSpecDsl
+@DslBuilder interface OverloadSpecDsl
 
 fun buildOverloadSpec(block: (Int) -> Unit) {
     block(0)
@@ -550,18 +487,14 @@ interface RequiredSuffixDsl {
     val id: String
 }
 
-@Suppress("UNUSED_PARAMETER")
-fun buildRequiredSuffix(id: String, flag: Boolean) {
-}
+@Suppress("UNUSED_PARAMETER") fun buildRequiredSuffix(id: String, flag: Boolean) {}
 
 @DslBuilder
 interface VarargSuffixDsl {
     val id: String
 }
 
-@Suppress("UNUSED_PARAMETER")
-fun buildVarargSuffix(id: String, vararg flags: Boolean) {
-}
+@Suppress("UNUSED_PARAMETER") fun buildVarargSuffix(id: String, vararg flags: Boolean) {}
 
 interface EventContainer {
     val child: SampleEvent
@@ -569,22 +502,19 @@ interface EventContainer {
 
 @DslBuilder(supertype = EventContainer::class, resultName = "EventContainerResult")
 interface EventContainerDsl {
-    @DslChild
-    fun child(block: TransientEventDsl.() -> Unit = {})
+    @DslChild fun child(block: TransientEventDsl.() -> Unit = {})
 }
 
 typealias AliasedGenericChildBlock<R> = TransientEventDsl.() -> R
 
 @DslBuilder
 interface GenericAliasedChildScopeDsl {
-    @DslChild
-    fun genericAliasedChild(block: AliasedGenericChildBlock<Unit>)
+    @DslChild fun genericAliasedChild(block: AliasedGenericChildBlock<Unit>)
 }
 
 @DslBuilder
 interface PlainChildDsl {
-    @DslValue(initial = "plain")
-    var value: String
+    @DslValue(initial = "plain") var value: String
 }
 
 interface AnyChildHolder {
@@ -593,23 +523,19 @@ interface AnyChildHolder {
 
 @DslBuilder(supertype = AnyChildHolder::class, resultName = "AnyChildHolderResult")
 interface AnyChildHolderDsl {
-    @DslChild
-    fun child(block: PlainChildDsl.() -> Unit = {})
+    @DslChild fun child(block: PlainChildDsl.() -> Unit = {})
 }
 
-@DslBuilder
-interface NullableBlockSpecDsl
+@DslBuilder interface NullableBlockSpecDsl
 
 @Suppress("UNUSED_PARAMETER")
-fun buildNullableBlockSpec(block: (NullableBlockSpecDsl.() -> Unit)?) {
-}
+fun buildNullableBlockSpec(block: (NullableBlockSpecDsl.() -> Unit)?) {}
 
 typealias MarkedIntListAlias<T> = @MaxBytes(5) MutableList<T>
 
 @DslBuilder
 interface AliasedMarkedIntsDsl {
-    @DslList
-    var values: MarkedIntListAlias<Int>
+    @DslList var values: MarkedIntListAlias<Int>
 }
 
 typealias AliasAny = Any
@@ -620,29 +546,24 @@ interface AliasAnyHolder {
 
 @DslBuilder(supertype = AliasAnyHolder::class, resultName = "AliasAnyHolderResult")
 interface AliasAnyHolderDsl {
-    @DslChild
-    fun child(block: PlainChildDsl.() -> Unit = {})
+    @DslChild fun child(block: PlainChildDsl.() -> Unit = {})
 }
 
 interface BareChildParameterBase<B> {
-    @DslChild
-    fun child(block: B)
+    @DslChild fun child(block: B)
 }
 
-@DslBuilder
-interface BareChildParameterDsl : BareChildParameterBase<TransientEventDsl.() -> Unit>
+@DslBuilder interface BareChildParameterDsl : BareChildParameterBase<TransientEventDsl.() -> Unit>
 
 typealias DirectChildBlockAlias = TransientEventDsl.() -> Unit
 
-@DslBuilder
-interface AliasedBareChildParameterDsl : BareChildParameterBase<DirectChildBlockAlias>
+@DslBuilder interface AliasedBareChildParameterDsl : BareChildParameterBase<DirectChildBlockAlias>
 
 typealias StarListAlias<T> = List<T>?
 
 @DslBuilder
 interface AliasedStarListDsl {
-    @DslValue
-    var values: StarListAlias<*>
+    @DslValue var values: StarListAlias<*>
 }
 
 interface NullableAliasAnyHolder {
@@ -651,8 +572,7 @@ interface NullableAliasAnyHolder {
 
 @DslBuilder(supertype = NullableAliasAnyHolder::class, resultName = "NullableAliasAnyHolderResult")
 interface NullableAliasAnyHolderDsl {
-    @DslChild
-    fun child(block: PlainChildDsl.() -> Unit = {})
+    @DslChild fun child(block: PlainChildDsl.() -> Unit = {})
 }
 
 @Suppress("unused")
@@ -660,8 +580,7 @@ typealias PhantomChildBlock<Marker, B> = B.() -> Unit
 
 @DslBuilder
 interface PhantomChildScopeDsl {
-    @DslChild
-    fun child(block: PhantomChildBlock<*, PlainChildDsl> = {})
+    @DslChild fun child(block: PhantomChildBlock<*, PlainChildDsl> = {})
 }
 
 @Suppress("unused")
@@ -673,8 +592,7 @@ interface GenericAliasAnyHolder {
 
 @DslBuilder(supertype = GenericAliasAnyHolder::class, resultName = "GenericAliasAnyHolderResult")
 interface GenericAliasAnyHolderDsl {
-    @DslChild
-    fun child(block: PlainChildDsl.() -> Unit = {})
+    @DslChild fun child(block: PlainChildDsl.() -> Unit = {})
 }
 
 private typealias PrivatePlainAlias = String
@@ -687,12 +605,10 @@ interface PrivateAliasDsl {
 typealias AliasedParamChildBlock<T> = T.() -> Unit
 
 interface AliasedParamChildBase<T> {
-    @DslChild
-    fun aliasedParamChild(block: AliasedParamChildBlock<T>)
+    @DslChild fun aliasedParamChild(block: AliasedParamChildBlock<T>)
 }
 
-@DslBuilder
-interface AliasedParamChildScopeDsl : AliasedParamChildBase<TransientEventDsl>
+@DslBuilder interface AliasedParamChildScopeDsl : AliasedParamChildBase<TransientEventDsl>
 
 interface AliasedValueBase<T> {
     val value: T
@@ -704,8 +620,7 @@ interface AliasedValueMiddle<T> : AliasedValueBaseAlias<T>
 
 @DslBuilder
 interface AliasedValueMidDsl : AliasedValueMiddle<String> {
-    @DslValue(initial = "own")
-    var own: String
+    @DslValue(initial = "own") var own: String
 }
 
 typealias AliasedMapperBase<A, B> = DslMapper<A, B>
@@ -720,8 +635,7 @@ object AliasedMapperImpl : AliasedMapperMiddle<Int, String>() {
 
 @DslBuilder
 interface AliasedMapperDsl {
-    @DslValue(initial = "7", mapper = AliasedMapperImpl::class)
-    var value: String
+    @DslValue(initial = "7", mapper = AliasedMapperImpl::class) var value: String
 }
 
 @DslBuilder
@@ -777,9 +691,7 @@ interface TopTargetAnnotationDsl {
     val value: TopTargetAnnotationLink<Int>
 }
 
-@Repeatable
-@Target(AnnotationTarget.TYPE)
-annotation class RepeatTypeMark(val value: Int)
+@Repeatable @Target(AnnotationTarget.TYPE) annotation class RepeatTypeMark(val value: Int)
 
 typealias RepeatedAnnotationAlias<T> = @RepeatTypeMark(5) @RepeatTypeMark(5) List<T>
 
@@ -801,8 +713,7 @@ interface InheritedAnnotationBase<T> {
 
 @DslBuilder
 interface InheritedAnnotationDsl : InheritedAnnotationBase<String> {
-    @DslValue(initial = "x")
-    var own: String
+    @DslValue(initial = "x") var own: String
 }
 
 @DslBuilder
@@ -815,33 +726,28 @@ interface AnnotatedParamChildBase<T> {
     fun child(values: List<@MaxBytes(90) T>, block: AnnotatedParamChildDsl.() -> Unit = {})
 }
 
-@DslBuilder
-interface AnnotatedParamScopeDsl : AnnotatedParamChildBase<String>
+@DslBuilder interface AnnotatedParamScopeDsl : AnnotatedParamChildBase<String>
 
 typealias AnnotatedChildBlock = @MaxBytes(91) AnnotatedParamChildDsl.() -> Unit
 
 @DslBuilder
 interface AnnotatedBlockScopeDsl {
-    @DslChild
-    fun child(values: List<String>, block: AnnotatedChildBlock = {})
+    @DslChild fun child(values: List<String>, block: AnnotatedChildBlock = {})
 }
 
 typealias AnnotatedGenericChildBlock<T> = @MaxBytes(92) T.() -> Unit
 
 interface AnnotatedGenericChildBase<T> {
-    @DslChild
-    fun child(block: AnnotatedGenericChildBlock<T>)
+    @DslChild fun child(block: AnnotatedGenericChildBlock<T>)
 }
 
-@DslBuilder
-interface AnnotatedGenericChildScopeDsl : AnnotatedGenericChildBase<TransientEventDsl>
+@DslBuilder interface AnnotatedGenericChildScopeDsl : AnnotatedGenericChildBase<TransientEventDsl>
 
 @DslBuilder
 interface FunctionRequiredDsl {
     val callback: (String) -> Unit
 
-    @DslValue(initial = "x")
-    var value: String
+    @DslValue(initial = "x") var value: String
 }
 
 @DslBuilder
@@ -856,17 +762,14 @@ interface FunctionChildDsl {
 
 @DslBuilder
 interface FunctionListHolderDsl {
-    @DslList(children = [FunctionChildDsl::class])
-    var items: MutableList<Any>
+    @DslList(children = [FunctionChildDsl::class]) var items: MutableList<Any>
 }
 
-@DslBuilder
-interface ShadowingBlockChildDsl
+@DslBuilder interface ShadowingBlockChildDsl
 
 @DslBuilder
 interface ShadowingBlockNameDsl {
-    @DslChild
-    fun child(childField: ShadowingBlockChildDsl.() -> Unit)
+    @DslChild fun child(childField: ShadowingBlockChildDsl.() -> Unit)
 }
 
 @DslBuilder
@@ -876,8 +779,7 @@ interface ShadowingValueChildDsl {
 
 @DslBuilder
 interface ShadowingValueNameDsl {
-    @DslChild
-    fun child(childField: Int, block: ShadowingValueChildDsl.() -> Unit)
+    @DslChild fun child(childField: Int, block: ShadowingValueChildDsl.() -> Unit)
 }
 
 @DslBuilder
@@ -887,29 +789,24 @@ interface ShadowedListChildDsl {
 
 @DslBuilder
 interface ShadowedListHolderDsl {
-    @DslList(children = [ShadowedListChildDsl::class])
-    var items: MutableList<Any>
+    @DslList(children = [ShadowedListChildDsl::class]) var items: MutableList<Any>
 }
 
-@DslBuilder
-interface BlockNamedListChildDsl
+@DslBuilder interface BlockNamedListChildDsl
 
 @DslBuilder
 interface BlockNamedListHolderDsl {
-    @DslList(children = [BlockNamedListChildDsl::class])
-    var block: MutableList<Any>
+    @DslList(children = [BlockNamedListChildDsl::class]) var block: MutableList<Any>
 }
 
 @DslBuilder
 interface EntryBlockChildDsl {
-    @DslValue(initial = "false")
-    var touched: Boolean
+    @DslValue(initial = "false") var touched: Boolean
 }
 
 @DslBuilder
 interface EntryBlockCaptureDsl {
-    @DslChild
-    fun block(block: EntryBlockChildDsl.() -> Unit = {})
+    @DslChild fun block(block: EntryBlockChildDsl.() -> Unit = {})
 }
 
 @Suppress("ClassName")
@@ -919,8 +816,7 @@ object fieldValidator : DslValidator<Int> {
 
 @DslBuilder
 interface LowercaseValidatorDsl {
-    @DslValue(initial = "0", validator = fieldValidator::class)
-    var value: Int
+    @DslValue(initial = "0", validator = fieldValidator::class) var value: Int
 }
 
 @Suppress("ClassName")
@@ -930,15 +826,13 @@ object newValue : DslValidator<Int> {
 
 @DslBuilder
 interface ShadowedValidatorDsl {
-    @DslValue(initial = "0", validator = newValue::class)
-    var value: Int
+    @DslValue(initial = "0", validator = newValue::class) var value: Int
 }
 
 @Suppress("ClassName")
 @DslBuilder
 interface lowercaseSpecDsl {
-    @DslValue(initial = "0")
-    var value: Int
+    @DslValue(initial = "0") var value: Int
 }
 
 @Suppress("ClassName")
@@ -948,27 +842,23 @@ object `when` : DslValidator<Int> {
 
 @DslBuilder
 interface KeywordValidatorDsl {
-    @DslValue(initial = "0", validator = `when`::class)
-    var value: Int
+    @DslValue(initial = "0", validator = `when`::class) var value: Int
 }
 
 @DslBuilder
 interface ShadowedRequireDsl {
     fun require(value: Boolean, lazyMessage: () -> Any) {}
 
-    @DslValue(initial = "0", validator = fieldValidator::class)
-    var value: Int
+    @DslValue(initial = "0", validator = fieldValidator::class) var value: Int
 }
 
-@DslBuilder
-interface ShadowedRequireNotNullChildDsl
+@DslBuilder interface ShadowedRequireNotNullChildDsl
 
 @DslBuilder
 interface ShadowedRequireNotNullDsl {
     fun <T> requireNotNull(value: T?, lazyMessage: () -> Any): T = value ?: error("shadowed")
 
-    @DslChild
-    fun child(block: ShadowedRequireNotNullChildDsl.() -> Unit = {})
+    @DslChild fun child(block: ShadowedRequireNotNullChildDsl.() -> Unit = {})
 }
 
 @DslBuilder
@@ -977,8 +867,7 @@ interface ShadowedListDsl {
 
     fun List<Any>.toList(): List<Any> = emptyList()
 
-    @DslList
-    var items: MutableList<Any>
+    @DslList var items: MutableList<Any>
 }
 
 @Suppress("unused")
@@ -993,8 +882,7 @@ interface HarmlessApplyChildDsl {
 
 @DslBuilder
 interface HarmlessApplyParentDsl {
-    @DslChild
-    fun child(apply: Int, block: HarmlessApplyChildDsl.() -> Unit)
+    @DslChild fun child(apply: Int, block: HarmlessApplyChildDsl.() -> Unit)
 }
 
 @Suppress("ClassName")
@@ -1002,8 +890,7 @@ class nestedContainer {
     @Suppress("ClassName")
     @DslBuilder
     interface nestedSpecDsl {
-        @DslValue(initial = "nested")
-        var nested: String
+        @DslValue(initial = "nested") var nested: String
     }
 }
 
@@ -1016,8 +903,7 @@ class build : DslMapper<Int, String> {
 
 @DslBuilder
 interface BuildMapperNameDsl {
-    @DslValue(initial = "1", mapper = build::class)
-    var value: String
+    @DslValue(initial = "1", mapper = build::class) var value: String
 }
 
 @Suppress("ClassName")
@@ -1029,26 +915,21 @@ class element {
 
 @DslBuilder
 interface NestedValidatorShadowDsl {
-    @DslList(validator = element.Validator::class)
-    var values: MutableList<Int>
+    @DslList(validator = element.Validator::class) var values: MutableList<Int>
 }
 
-@Suppress("unused", "ClassName")
-class newValueRef
+@Suppress("unused", "ClassName") class newValueRef
 
-@Suppress("unused", "ClassName")
-class newValueRef_
+@Suppress("unused", "ClassName") class newValueRef_
 
-@Target(AnnotationTarget.TYPE)
-annotation class ExtensionFunctionType
+@Target(AnnotationTarget.TYPE) annotation class ExtensionFunctionType
 
 @DslBuilder
 interface MarkerNameCollisionDsl {
     val callback: @ExtensionFunctionType (String) -> Unit
 }
 
-@Target(AnnotationTarget.TYPE)
-annotation class ParameterName(val name: String)
+@Target(AnnotationTarget.TYPE) annotation class ParameterName(val name: String)
 
 @DslBuilder
 interface ParameterNameCollisionDsl {
@@ -1067,62 +948,46 @@ interface NullableNestedFunctionReceiverDsl {
 
 @DslBuilder
 interface EmptyInitialDsl {
-    @DslValue(initial = "")
-    var text: String
+    @DslValue(initial = "") var text: String
 
-    @DslValue(initial = "")
-    var nullable: String?
+    @DslValue(initial = "") var nullable: String?
 }
 
 /**
- * Initial values that a generated UTF-8 file cannot carry verbatim:
- * control characters, an unpaired surrogate, invisible separators and
- * format characters, unassigned and private-use code points, and a string
- * that contains an unpaired surrogate.
+ * Initial values that a generated UTF-8 file cannot carry verbatim: control characters, an unpaired
+ * surrogate, invisible separators and format characters, unassigned and private-use code points,
+ * and a string that contains an unpaired surrogate.
  */
 @DslBuilder
 interface EscapedCharInitialDsl {
-    @DslValue(initial = "\u0000")
-    var nul: Char
+    @DslValue(initial = "\u0000") var nul: Char
 
-    @DslValue(initial = "\u0008")
-    var backspace: Char
+    @DslValue(initial = "\u0008") var backspace: Char
 
-    @DslValue(initial = "\u007f")
-    var delete: Char
+    @DslValue(initial = "\u007f") var delete: Char
 
-    @DslValue(initial = "\u2028")
-    var lineSeparator: Char
+    @DslValue(initial = "\u2028") var lineSeparator: Char
 
-    @DslValue(initial = "\u2029")
-    var paragraphSeparator: Char
+    @DslValue(initial = "\u2029") var paragraphSeparator: Char
 
-    @DslValue(initial = "\ufeff")
-    var format: Char
+    @DslValue(initial = "\ufeff") var format: Char
 
-    @DslValue(initial = "\ue000")
-    var privateUse: Char
+    @DslValue(initial = "\ue000") var privateUse: Char
 
-    @DslValue(initial = "\u0378")
-    var unassigned: Char
+    @DslValue(initial = "\u0378") var unassigned: Char
 
-    @DslValue(initial = "\ud800")
-    var surrogate: Char
+    @DslValue(initial = "\ud800") var surrogate: Char
 
-    @DslValue(initial = "lone \ud800 surrogate")
-    var text: String
+    @DslValue(initial = "lone \ud800 surrogate") var text: String
 }
 
 @DslBuilder
 interface FloatingPointInitialDsl {
-    @DslValue(initial = "0.1")
-    var ratio: Float
+    @DslValue(initial = "0.1") var ratio: Float
 
-    @DslValue(initial = "1e30")
-    var huge: Float
+    @DslValue(initial = "1e30") var huge: Float
 
-    @DslValue(initial = "1e-320")
-    var tiny: Double
+    @DslValue(initial = "1e-320") var tiny: Double
 }
 
 /** Messages that carry an unpaired surrogate, rendered through `require`. */
@@ -1136,10 +1001,9 @@ interface EscapedMessageDsl {
 }
 
 /**
- * Shadows the standard library function of the same name for declarations
- * of this package, so generated code has to bind the standard library
- * function through its explicit import. Tests in this package must import
- * [kotlin.require] explicitly before calling it.
+ * Shadows the standard library function of the same name for declarations of this package, so
+ * generated code has to bind the standard library function through its explicit import. Tests in
+ * this package must import [kotlin.require] explicitly before calling it.
  */
 @Suppress("unused")
 fun require(value: Boolean, lazyMessage: () -> Any) {
@@ -1148,14 +1012,12 @@ fun require(value: Boolean, lazyMessage: () -> Any) {
 
 @DslBuilder
 interface NamedChildDsl {
-    @DslValue(initial = "0")
-    var value: Int
+    @DslValue(initial = "0") var value: Int
 }
 
 @DslBuilder
 interface CaptureChildBuilderDsl {
-    @DslChild
-    fun child(block: NamedChildDsl.() -> Unit = {})
+    @DslChild fun child(block: NamedChildDsl.() -> Unit = {})
 
     @Suppress("TestFunctionName")
     @DslChild
@@ -1164,27 +1026,21 @@ interface CaptureChildBuilderDsl {
 
 @DslBuilder
 interface MultilineInitialDsl {
-    @DslValue(initial = "first\nsecond")
-    var text: String
+    @DslValue(initial = "first\nsecond") var text: String
 }
 
 @DslBuilder
 interface NegativeBoundaryInitialDsl {
-    @DslValue(initial = "-32768")
-    var short: Short
+    @DslValue(initial = "-32768") var short: Short
 
-    @DslValue(initial = "-128")
-    var byte: Byte
+    @DslValue(initial = "-128") var byte: Byte
 
-    @DslValue(initial = "-9223372036854775808")
-    var long: Long
+    @DslValue(initial = "-9223372036854775808") var long: Long
 }
 
 @DslBuilder
 interface ShadowedLongInitialDsl {
-    @Suppress("PropertyName")
-    @DslValue(initial = "-9223372036854775808")
-    var Long: Long
+    @Suppress("PropertyName") @DslValue(initial = "-9223372036854775808") var Long: Long
 }
 
 interface SatisfiableMembers {
@@ -1207,7 +1063,8 @@ interface ConcreteMemberExtensions {
 
 @Suppress("unused")
 interface PrivateResultMembers {
-    private val name: String get() = "private"
+    private val name: String
+        get() = "private"
 
     private fun component1(): String = "private"
 }
@@ -1220,17 +1077,14 @@ interface PrivateResultMembersDsl {
 @DslBuilder
 @Suppress("unused")
 interface PrivateBuildHelperDsl {
-    @DslValue(initial = "1")
-    var value: Int
+    @DslValue(initial = "1") var value: Int
 
     private fun build(): String = "helper"
 }
 
-@RequiresOptIn
-annotation class ExperimentalDslType
+@RequiresOptIn annotation class ExperimentalDslType
 
-@ExperimentalDslType
-class ExperimentalValue(val text: String)
+@ExperimentalDslType class ExperimentalValue(val text: String)
 
 @OptIn(ExperimentalDslType::class)
 @DslBuilder
@@ -1240,8 +1094,7 @@ interface ClassOptInDsl {
 
 @DslBuilder
 interface PropertyOptInDsl {
-    @OptIn(ExperimentalDslType::class)
-    val value: ExperimentalValue
+    @OptIn(ExperimentalDslType::class) val value: ExperimentalValue
 }
 
 @DslBuilder(supertype = ConcreteMemberExtensions::class)
@@ -1251,8 +1104,7 @@ interface ConcreteMemberExtensionDsl {
 
 @DslBuilder
 interface SpecConcreteMemberExtensionDsl {
-    @DslValue(initial = "1")
-    var value: Int
+    @DslValue(initial = "1") var value: Int
 
     val String.label: String
         get() = "label"

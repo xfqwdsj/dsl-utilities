@@ -18,21 +18,22 @@ internal fun ListProperty.nameField(): String = fieldName
 internal fun ChildScope.nameField(): String = fieldName
 
 /**
- * Returns whether [declaration] or one of its supertypes declares an
- * abstract property named [name].
+ * Returns whether [declaration] or one of its supertypes declares an abstract property named
+ * [name].
  */
 internal fun requiresProperty(declaration: KSClassDeclaration, name: String): Boolean =
     (sequenceOf(declaration.asStarProjectedType()) + declaration.getAllSuperTypes())
         .mapNotNull { it.declaration as? KSClassDeclaration }
         .distinct()
         .any { current ->
-            current.getDeclaredProperties().any { it.isAbstract() && it.simpleName.asString() == name }
+            current.getDeclaredProperties().any {
+                it.isAbstract() && it.simpleName.asString() == name
+            }
         }
 
 /**
- * Required properties are declared as `val`: they are parameters of the
- * generated builder and of the generated build function, so the compiler
- * enforces their presence.
+ * Required properties are declared as `val`: they are parameters of the generated builder and of
+ * the generated build function, so the compiler enforces their presence.
  */
 internal fun requiredProperty(
     name: String,
@@ -44,8 +45,7 @@ internal fun requiredProperty(
 ): RequiredProperty? {
     val diagnostics = checker.diagnosticCount
     val resolvedType = checker.expandAliases(type)
-    val typeName = checker.renderTypeName(property, type, declarationType)
-        ?: return null
+    val typeName = checker.renderTypeName(property, type, declarationType) ?: return null
     if (annotation?.providedString("initial") != null) {
         checker.report(property, "@DslValue.initial applies to var properties; $name is a val.")
         return null
@@ -71,14 +71,18 @@ internal fun requiredProperty(
     }
     val validator = checker.validator(property, name, annotation?.type("validator"), resolvedType)
     if (checker.diagnosticCount != diagnostics) return null
-    return RequiredProperty(name, typeName, resolvedType, validator, checker.message(annotation, name))
+    return RequiredProperty(
+        name,
+        typeName,
+        resolvedType,
+        validator,
+        checker.message(annotation, name),
+    )
 }
 
 /**
- * Value properties are declared as `var` with
- * [DslValue][top.ltfan.dslutilities.DslValue]: they are set inside the
- * DSL block with the validator and mapper wired inline into the generated
- * accessors.
+ * Value properties are declared as `var` with [DslValue][top.ltfan.dslutilities.DslValue]: they are
+ * set inside the DSL block with the validator and mapper wired inline into the generated accessors.
  */
 internal fun valueProperty(
     name: String,
@@ -101,15 +105,22 @@ internal fun valueProperty(
     val mapper = checker.mapper(property, name, annotation.type("mapper"), resolvedType)
     if (checker.diagnosticCount != diagnostics) return null
     val initial = annotation.providedString("initial")
-    val provider = checker.initialProvider(property, name, annotation.type("provider"), resolvedType)
+    val provider =
+        checker.initialProvider(property, name, annotation.type("provider"), resolvedType)
     if (checker.diagnosticCount != diagnostics) return null
     if (initial != null && provider != null) {
-        checker.report(property, "@DslValue.initial and @DslValue.provider are mutually exclusive for property $name.")
+        checker.report(
+            property,
+            "@DslValue.initial and @DslValue.provider are mutually exclusive for property $name.",
+        )
         return null
     }
     val required = annotation.boolean("required") == true
     if (required && (initial != null || provider != null)) {
-        checker.report(property, "Required @DslValue property $name must not declare an initial value or provider.")
+        checker.report(
+            property,
+            "Required @DslValue property $name must not declare an initial value or provider.",
+        )
         return null
     }
     when (initial) {
@@ -129,20 +140,23 @@ internal fun valueProperty(
             return null
         }
     }
-    val initialValue = if (required || provider != null) {
-        null
-    } else if (initial == null) {
-        CodeBlock.of("null")
-    } else {
-        checker.literal(property, name, initial, resolvedType) ?: return null
-    }
-    val validator = checker.validator(
-        property,
-        name,
-        annotation.type("validator"),
-        mapper?.storedType ?: resolvedType,
-    )
-    val hook = checker.hook(property, name, annotation.type("hook"), resolvedType, DSL_VALUE_HOOK_NAME)
+    val initialValue =
+        if (required || provider != null) {
+            null
+        } else if (initial == null) {
+            CodeBlock.of("null")
+        } else {
+            checker.literal(property, name, initial, resolvedType) ?: return null
+        }
+    val validator =
+        checker.validator(
+            property,
+            name,
+            annotation.type("validator"),
+            mapper?.storedType ?: resolvedType,
+        )
+    val hook =
+        checker.hook(property, name, annotation.type("hook"), resolvedType, DSL_VALUE_HOOK_NAME)
     if (checker.diagnosticCount != diagnostics) return null
     return ValueProperty(
         name = name,
@@ -160,12 +174,10 @@ internal fun valueProperty(
 }
 
 /**
- * List properties are declared as `var` with
- * [DslList][top.ltfan.dslutilities.DslList]: their elements are mutated
- * inside the DSL block and are validated in the generated build function;
- * the generated result class exposes them as read-only lists. Each
- * declared child receives a generated element function that builds the
- * child value and adds it to the list.
+ * List properties are declared as `var` with [DslList][top.ltfan.dslutilities.DslList]: their
+ * elements are mutated inside the DSL block and are validated in the generated build function; the
+ * generated result class exposes them as read-only lists. Each declared child receives a generated
+ * element function that builds the child value and adds it to the list.
  */
 internal fun DslProcessor.listProperty(
     name: String,
@@ -181,9 +193,7 @@ internal fun DslProcessor.listProperty(
         return null
     }
     val resolvedType = checker.expandAliases(type)
-    if (!resolvedType.declaration.isClass(MUTABLE_LIST) ||
-        resolvedType.arguments.size != 1
-    ) {
+    if (!resolvedType.declaration.isClass(MUTABLE_LIST) || resolvedType.arguments.size != 1) {
         checker.report(
             property,
             "Property $name annotated with @DslList has a type other than MutableList of the element type.",
@@ -205,28 +215,48 @@ internal fun DslProcessor.listProperty(
         )
         return null
     }
-    val elementType = argument.type?.resolve() ?: run {
-        checker.report(property, "Property $name has an unsupported element type.")
-        return null
-    }
-    val declarationElementType = checker.expandAliases(declarationType).arguments.getOrNull(0)?.type?.resolve()
-    val elementTypeName = checker.renderTypeName(property, elementType, declarationElementType) ?: return null
+    val elementType =
+        argument.type?.resolve()
+            ?: run {
+                checker.report(property, "Property $name has an unsupported element type.")
+                return null
+            }
+    val declarationElementType =
+        checker.expandAliases(declarationType).arguments.getOrNull(0)?.type?.resolve()
+    val elementTypeName =
+        checker.renderTypeName(property, elementType, declarationElementType) ?: return null
     val listTypeName = checker.renderTypeName(property, type, declarationType) ?: return null
     val resolvedElementType = checker.expandAliases(elementType)
-    val validator = checker.validator(property, name, annotation.type("validator"), resolvedElementType)
-    val hook = checker.hook(property, name, annotation.type("hook"), resolvedElementType, DSL_LIST_HOOK_NAME)
+    val validator =
+        checker.validator(property, name, annotation.type("validator"), resolvedElementType)
+    val hook =
+        checker.hook(
+            property,
+            name,
+            annotation.type("hook"),
+            resolvedElementType,
+            DSL_LIST_HOOK_NAME,
+        )
     if (checker.diagnosticCount != diagnostics) return null
 
     val children = mutableListOf<ChildSpec>()
     for (argumentType in annotation.typeArray("children")) {
         if (argumentType.isError) {
-            checker.reportUnresolved(property, "A child of @DslList property $name is not resolvable yet.")
+            checker.reportUnresolved(
+                property,
+                "A child of @DslList property $name is not resolvable yet.",
+            )
             return null
         }
-        val childDeclaration = checker.expandAliases(argumentType).declaration as? KSClassDeclaration ?: run {
-            checker.report(property, "The children of @DslList property $name must be DslBuilder interfaces.")
-            return null
-        }
+        val childDeclaration =
+            checker.expandAliases(argumentType).declaration as? KSClassDeclaration
+                ?: run {
+                    checker.report(
+                        property,
+                        "The children of @DslList property $name must be DslBuilder interfaces.",
+                    )
+                    return null
+                }
         val child = resolveChild(childDeclaration, checker) ?: return null
         if (!acceptsChildResult(resolvedElementType, child, checker)) {
             checker.report(
@@ -240,7 +270,10 @@ internal fun DslProcessor.listProperty(
     if (checker.diagnosticCount != diagnostics) return null
     val functionNames = children.map { it.functionName }
     if (functionNames.size != functionNames.toSet().size) {
-        checker.report(property, "Two or more children of @DslList property $name produce the same function name.")
+        checker.report(
+            property,
+            "Two or more children of @DslList property $name produce the same function name.",
+        )
         return null
     }
     val scopeName = annotation.string("scopeName").orEmpty()

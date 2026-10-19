@@ -1,31 +1,27 @@
 package top.ltfan.dslutilities.test
 
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import top.ltfan.dslutilities.DslBuildHook
 import top.ltfan.dslutilities.DslBuilder
 import top.ltfan.dslutilities.DslList
 import top.ltfan.dslutilities.DslListScope
 import top.ltfan.dslutilities.DslValue
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertNull
 
 @DslBuilder
 interface RequiredValuesDsl {
-    @DslValue(required = true)
-    var title: String
+    @DslValue(required = true) var title: String
 
-    @DslValue(required = true)
-    var optional: String?
+    @DslValue(required = true) var optional: String?
 }
 
 @DslBuilder
 interface RequiredStateNameCollisionDsl {
-    @DslValue(required = true)
-    var value: String
+    @DslValue(required = true) var value: String
 
-    @DslValue(initial = "false")
-    var valueFieldIsSet: Boolean
+    @DslValue(initial = "false") var valueFieldIsSet: Boolean
 }
 
 object CompleteRequiredValues : DslBuildHook<HookedValuesDsl> {
@@ -40,21 +36,22 @@ object CompleteRequiredValues : DslBuildHook<HookedValuesDsl> {
 
 @DslBuilder(buildHook = CompleteRequiredValues::class)
 interface HookedValuesDsl {
-    @DslValue(required = true)
-    var title: String
+    @DslValue(required = true) var title: String
 
-    @DslValue(required = true, validator = PositiveIntValidator::class)
-    var count: Int
+    @DslValue(required = true, validator = PositiveIntValidator::class) var count: Int
 }
 
 interface SharedLeaf {
     val value: Int
 }
 
-@DslBuilder(supertype = SharedLeaf::class, resultName = "SharedLeafValue", requireConfiguration = true)
+@DslBuilder(
+    supertype = SharedLeaf::class,
+    resultName = "SharedLeafValue",
+    requireConfiguration = true,
+)
 interface SharedLeafDsl {
-    @DslValue(initial = "0")
-    var value: Int
+    @DslValue(initial = "0") var value: Int
 }
 
 @DslBuilder

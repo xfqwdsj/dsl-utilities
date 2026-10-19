@@ -46,7 +46,10 @@ class FunctionWriteDslTest {
 
     @Test
     fun `generated builder keeps write storage private`() {
-        val file = File("build/generated/ksp").walkTopDown().firstOrNull { it.name == "RecordedScopeDslBuilder.kt" }
+        val file =
+            File("build/generated/ksp").walkTopDown().firstOrNull {
+                it.name == "RecordedScopeDslBuilder.kt"
+            }
         assertNotNull(file)
         val text = file.readText()
         assertTrue(text.contains("private val itemsField"), text)

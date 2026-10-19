@@ -11,24 +11,19 @@ import com.google.devtools.ksp.symbol.KSType
 import com.google.devtools.ksp.symbol.KSTypeAlias
 
 /**
- * Reports generated declaration collisions before opening an output
- * file, keeping invalid custom or derived names as KSP diagnostics
- * instead of file-creation failures or later redeclaration errors.
- * Declarations already present in the specification's package are reserved
- * as well, because generated functions and extension properties share
- * the package-level scope with them. A generated class constructor
- * conflicts with a same-named package function that declares the
- * same parameter types, and a generated function conflicts with the
- * constructor of a same-named package class; both directions use exact
- * signature matches. A generated function whose trailing configuration
- * block is optional also conflicts with a same-named declaration
- * whose leading parameters are those before that block and whose
- * remaining parameters all have defaults, because a call that omits
- * the block and those defaults is applicable to both declarations.
+ * Reports generated declaration collisions before opening an output file, keeping invalid custom or
+ * derived names as KSP diagnostics instead of file-creation failures or later redeclaration errors.
+ * Declarations already present in the specification's package are reserved as well, because
+ * generated functions and extension properties share the package-level scope with them. A generated
+ * class constructor conflicts with a same-named package function that declares the same parameter
+ * types, and a generated function conflicts with the constructor of a same-named package class;
+ * both directions use exact signature matches. A generated function whose trailing configuration
+ * block is optional also conflicts with a same-named declaration whose leading parameters are those
+ * before that block and whose remaining parameters all have defaults, because a call that omits the
+ * block and those defaults is applicable to both declarations.
  *
- * @param constructorTypes the parameter types of the generated result
- *   constructor in order; `null` marks a property whose generated result
- *   class has no counterpart in existing declarations.
+ * @param constructorTypes the parameter types of the generated result constructor in order; `null`
+ *   marks a property whose generated result class has no counterpart in existing declarations.
  */
 internal fun DslProcessor.reserveGeneratedNames(
     spec: KSClassDeclaration,
@@ -43,42 +38,57 @@ internal fun DslProcessor.reserveGeneratedNames(
 ) {
     fun qualified(name: String): String = if (packageName.isEmpty()) name else "$packageName.$name"
     val owner = spec.qualifiedName?.asString() ?: spec.simpleName.asString()
-    val typeNames = listOf(names.builderName, names.resultName) +
+    val typeNames =
+        listOf(names.builderName, names.resultName) +
             listProperties.mapNotNull { it.scopeTypeName?.simpleName }
     if (typeNames.size != typeNames.toSet().size) {
-        checker.report(spec, "Generated result, builder and named list scope types must have distinct names.")
+        checker.report(
+            spec,
+            "Generated result, builder and named list scope types must have distinct names.",
+        )
         return
     }
     for (name in typeNames) {
         val qualifiedName = qualified(name)
-        val existing = resolver.getClassDeclarationByName(resolver.getKSNameFromString(qualifiedName)) != null ||
+        val existing =
+            resolver.getClassDeclarationByName(resolver.getKSNameFromString(qualifiedName)) !=
+                null ||
                 declarationsInPackage(resolver, packageName).any { declaration ->
                     declaration is KSTypeAlias && declaration.simpleName.asString() == name
                 }
-        val constructorParameters = when (name) {
-            names.builderName -> emptyList()
-            names.resultName -> constructorTypes
-            else -> listOf(listProperties.first { it.scopeTypeName?.simpleName == name }.type)
-        }
-        val existingFunction = resolver.getFunctionDeclarationsByName(
-            resolver.getKSNameFromString(qualifiedName),
-            includeTopLevel = true,
-        ).any { function ->
-            function.parentDeclaration == null &&
-                    function.isDeclaredInThisModule() &&
-                    function.packageName.asString() == packageName &&
-                    function.extensionReceiver == null &&
-                    function.typeParameters.isEmpty() &&
-                    function.parameters.size == constructorParameters.size &&
-                    function.parameters.withIndex().all { (index, parameter) ->
-                        constructorParameters[index]?.let { checker.sameType(parameter.type.resolve(), it) } == true
-                    }
-        }
+        val constructorParameters =
+            when (name) {
+                names.builderName -> emptyList()
+                names.resultName -> constructorTypes
+                else -> listOf(listProperties.first { it.scopeTypeName?.simpleName == name }.type)
+            }
+        val existingFunction =
+            resolver
+                .getFunctionDeclarationsByName(
+                    resolver.getKSNameFromString(qualifiedName),
+                    includeTopLevel = true,
+                )
+                .any { function ->
+                    function.parentDeclaration == null &&
+                        function.isDeclaredInThisModule() &&
+                        function.packageName.asString() == packageName &&
+                        function.extensionReceiver == null &&
+                        function.typeParameters.isEmpty() &&
+                        function.parameters.size == constructorParameters.size &&
+                        function.parameters.withIndex().all { (index, parameter) ->
+                            constructorParameters[index]?.let {
+                                checker.sameType(parameter.type.resolve(), it)
+                            } == true
+                        }
+                }
         val reservedBy = generatedTypeOwners[qualifiedName]
         val spelling = generatedTypeSpellings.putIfAbsent(qualifiedName.lowercase(), qualifiedName)
         when {
             existing ->
-                checker.report(spec, "Generated type $qualifiedName conflicts with an existing declaration.")
+                checker.report(
+                    spec,
+                    "Generated type $qualifiedName conflicts with an existing declaration.",
+                )
 
             existingFunction ->
                 checker.report(
@@ -87,7 +97,10 @@ internal fun DslProcessor.reserveGeneratedNames(
                 )
 
             reservedBy != null && reservedBy != owner ->
-                checker.report(spec, "Generated type $qualifiedName is also produced by $reservedBy.")
+                checker.report(
+                    spec,
+                    "Generated type $qualifiedName is also produced by $reservedBy.",
+                )
 
             spelling != null && spelling != qualifiedName ->
                 checker.report(
@@ -100,35 +113,45 @@ internal fun DslProcessor.reserveGeneratedNames(
     val reservedFunctions = mutableListOf<Pair<String, Pair<String, GeneratedSignature>>>()
     fun reserveFunction(name: String, signature: GeneratedSignature, optionalBlock: Boolean) {
         val qualifiedName = qualified(name)
-        val existingFunctions = resolver.getFunctionDeclarationsByName(
-            resolver.getKSNameFromString(qualifiedName),
-            includeTopLevel = true,
-        ).filter { function ->
-            function.parentDeclaration == null &&
-                    function.isDeclaredInThisModule() &&
-                    function.packageName.asString() == packageName
-        }
-        val existingConstructors = resolver.getClassDeclarationByName(resolver.getKSNameFromString(qualifiedName))
-            ?.takeIf { declaration ->
-                declaration.packageName.asString() == packageName &&
+        val existingFunctions =
+            resolver
+                .getFunctionDeclarationsByName(
+                    resolver.getKSNameFromString(qualifiedName),
+                    includeTopLevel = true,
+                )
+                .filter { function ->
+                    function.parentDeclaration == null &&
+                        function.isDeclaredInThisModule() &&
+                        function.packageName.asString() == packageName
+                }
+        val existingConstructors =
+            resolver
+                .getClassDeclarationByName(resolver.getKSNameFromString(qualifiedName))
+                ?.takeIf { declaration ->
+                    declaration.packageName.asString() == packageName &&
                         declaration.isDeclaredInThisModule() &&
                         checker.isAccessibleFromGeneratedCode(declaration)
-            }
-            ?.getConstructors()
-            ?.filter { constructor -> checker.isAccessibleFromGeneratedCode(constructor) }
-            .orEmpty()
-        val existing = existingFunctions.any { matchesSignature(it, signature, checker, resolver) } ||
+                }
+                ?.getConstructors()
+                ?.filter { constructor -> checker.isAccessibleFromGeneratedCode(constructor) }
+                .orEmpty()
+        val existing =
+            existingFunctions.any { matchesSignature(it, signature, checker, resolver) } ||
                 existingConstructors.any { matchesSignature(it, signature, checker, resolver) }
-        val existingPrefix = optionalBlock && (
-                existingFunctions.any { matchesOptionalBlockPrefix(it, signature, checker) } ||
-                        existingConstructors.any { matchesOptionalBlockPrefix(it, signature, checker) }
-                )
-        val reservedBy = generatedFunctionOwners[qualifiedName]
-            ?.firstOrNull { (_, reserved) -> sameSignature(reserved, signature, checker) }
-            ?.first
+        val existingPrefix =
+            optionalBlock &&
+                (existingFunctions.any { matchesOptionalBlockPrefix(it, signature, checker) } ||
+                    existingConstructors.any { matchesOptionalBlockPrefix(it, signature, checker) })
+        val reservedBy =
+            generatedFunctionOwners[qualifiedName]
+                ?.firstOrNull { (_, reserved) -> sameSignature(reserved, signature, checker) }
+                ?.first
         when {
             existing ->
-                checker.report(spec, "Generated function $qualifiedName conflicts with an existing declaration.")
+                checker.report(
+                    spec,
+                    "Generated function $qualifiedName conflicts with an existing declaration.",
+                )
 
             existingPrefix ->
                 checker.report(
@@ -137,7 +160,10 @@ internal fun DslProcessor.reserveGeneratedNames(
                 )
 
             reservedBy != null && reservedBy != owner ->
-                checker.report(spec, "Generated function $qualifiedName is also produced by $reservedBy.")
+                checker.report(
+                    spec,
+                    "Generated function $qualifiedName is also produced by $reservedBy.",
+                )
         }
         reservedFunctions += qualifiedName to (owner to signature)
     }
@@ -147,7 +173,8 @@ internal fun DslProcessor.reserveGeneratedNames(
         reserveFunction(
             names.functionName,
             GeneratedSignature(null, requiredProperties.map { it.type }, specType),
-            optionalBlock = spec.annotation(DSL_BUILDER_ANNOTATION)?.boolean("requireConfiguration") != true,
+            optionalBlock =
+                spec.annotation(DSL_BUILDER_ANNOTATION)?.boolean("requireConfiguration") != true,
         )
     }
     for (property in listProperties) {
@@ -171,14 +198,16 @@ internal fun DslProcessor.reserveGeneratedNames(
             )
             if (child.required.isEmpty() && !child.requiresConfiguration) {
                 val shorthandKey = "$specQualifiedName.${child.functionName}"
-                val existing = declarationsInPackage(resolver, packageName).any { declaration ->
-                    declaration is KSPropertyDeclaration &&
+                val existing =
+                    declarationsInPackage(resolver, packageName).any { declaration ->
+                        declaration is KSPropertyDeclaration &&
                             declaration.parentDeclaration == null &&
                             declaration.isDeclaredInThisModule() &&
                             declaration.simpleName.asString() == child.functionName &&
-                            declaration.extensionReceiver?.resolve()
-                                ?.let { checker.erasureKey(it) } == specQualifiedName
-                }
+                            declaration.extensionReceiver?.resolve()?.let {
+                                checker.erasureKey(it)
+                            } == specQualifiedName
+                    }
                 val reservedBy = generatedPropertyOwners[shorthandKey]
                 when {
                     existing ->
@@ -206,9 +235,8 @@ internal fun DslProcessor.reserveGeneratedNames(
 }
 
 /**
- * Returns `true` when two generated signatures would be conflicting
- * overloads, which is the case when their receivers and parameter types
- * denote the same Kotlin types.
+ * Returns `true` when two generated signatures would be conflicting overloads, which is the case
+ * when their receivers and parameter types denote the same Kotlin types.
  */
 internal fun sameSignature(
     first: GeneratedSignature,
@@ -216,29 +244,28 @@ internal fun sameSignature(
     checker: Checker,
 ): Boolean =
     checker.sameType(first.receiver, second.receiver) &&
-            first.parameters.size == second.parameters.size &&
-            first.parameters.zip(second.parameters).all { (firstType, secondType) ->
-                checker.sameType(firstType, secondType)
-            } &&
-            when {
-                first.generatedBlockReceiver != null && second.generatedBlockReceiver != null ->
-                    first.generatedBlockReceiver == second.generatedBlockReceiver
+        first.parameters.size == second.parameters.size &&
+        first.parameters.zip(second.parameters).all { (firstType, secondType) ->
+            checker.sameType(firstType, secondType)
+        } &&
+        when {
+            first.generatedBlockReceiver != null && second.generatedBlockReceiver != null ->
+                first.generatedBlockReceiver == second.generatedBlockReceiver
 
-                first.generatedBlockReceiver != null ->
-                    second.blockReceiver?.declaration?.qualifiedName?.asString() ==
-                            first.generatedBlockReceiver.canonicalName
+            first.generatedBlockReceiver != null ->
+                second.blockReceiver?.declaration?.qualifiedName?.asString() ==
+                    first.generatedBlockReceiver.canonicalName
 
-                second.generatedBlockReceiver != null ->
-                    first.blockReceiver?.declaration?.qualifiedName?.asString() ==
-                            second.generatedBlockReceiver.canonicalName
+            second.generatedBlockReceiver != null ->
+                first.blockReceiver?.declaration?.qualifiedName?.asString() ==
+                    second.generatedBlockReceiver.canonicalName
 
-                else -> checker.sameType(first.blockReceiver, second.blockReceiver)
-            }
+            else -> checker.sameType(first.blockReceiver, second.blockReceiver)
+        }
 
 /**
- * Returns `true` when [function] declares the same Kotlin signature
- * as a generated [signature], so emitting the generated declaration
- * would produce conflicting overloads. Kotlin compares names and
+ * Returns `true` when [function] declares the same Kotlin signature as a generated [signature], so
+ * emitting the generated declaration would produce conflicting overloads. Kotlin compares names and
  * parameter types; an extension receiver counts as the first parameter.
  */
 internal fun matchesSignature(
@@ -261,23 +288,22 @@ internal fun matchesSignature(
     if (blockArguments.size != 2) return false
     val blockReceiver = blockArguments[0].type?.resolve() ?: return false
     val blockReturnType = blockArguments[1].type?.resolve() ?: return false
-    val receiverMatches = signature.generatedBlockReceiver?.let { generated ->
-        checker.expandAliases(blockReceiver).declaration.qualifiedName?.asString() == generated.canonicalName
-    } ?: checker.sameType(blockReceiver, signature.blockReceiver)
-    return receiverMatches &&
-            checker.sameType(blockReturnType, resolver.builtIns.unitType)
+    val receiverMatches =
+        signature.generatedBlockReceiver?.let { generated ->
+            checker.expandAliases(blockReceiver).declaration.qualifiedName?.asString() ==
+                generated.canonicalName
+        } ?: checker.sameType(blockReceiver, signature.blockReceiver)
+    return receiverMatches && checker.sameType(blockReturnType, resolver.builtIns.unitType)
 }
 
 /**
- * Returns `true` when [function] declares the parameters that the
- * generated [signature] declares before its trailing configuration block,
- * so a call that omits the block is applicable to both declarations
- * and overload resolution decides between them. The parameters after
- * that prefix must all have defaults: a call that also omits them
- * stays applicable, while a required parameter makes the declaration
- * inapplicable and a vararg parameter loses overload resolution to the
- * non-vararg generated function. A generic declaration cannot take
- * precedence over the non-generic generated function.
+ * Returns `true` when [function] declares the parameters that the generated [signature] declares
+ * before its trailing configuration block, so a call that omits the block is applicable to both
+ * declarations and overload resolution decides between them. The parameters after that prefix must
+ * all have defaults: a call that also omits them stays applicable, while a required parameter makes
+ * the declaration inapplicable and a vararg parameter loses overload resolution to the non-vararg
+ * generated function. A generic declaration cannot take precedence over the non-generic generated
+ * function.
  */
 internal fun matchesOptionalBlockPrefix(
     function: KSFunctionDeclaration,
@@ -294,13 +320,18 @@ internal fun matchesOptionalBlockPrefix(
 }
 
 /**
- * Returns the top-level declarations of [packageName], cached for the
- * current processing round so that each specification reuses one lookup.
+ * Returns the top-level declarations of [packageName], cached for the current processing round so
+ * that each specification reuses one lookup.
  */
 @OptIn(KspExperimental::class)
-internal fun DslProcessor.declarationsInPackage(resolver: Resolver, packageName: String): List<KSDeclaration> {
-    val cache = packageDeclarations ?: mutableMapOf<String, List<KSDeclaration>>().also {
-        packageDeclarations = it
-    }
+internal fun DslProcessor.declarationsInPackage(
+    resolver: Resolver,
+    packageName: String,
+): List<KSDeclaration> {
+    val cache =
+        packageDeclarations
+            ?: mutableMapOf<String, List<KSDeclaration>>().also {
+                packageDeclarations = it
+            }
     return cache.getOrPut(packageName) { resolver.getDeclarationsFromPackage(packageName).toList() }
 }

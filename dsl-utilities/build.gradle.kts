@@ -42,7 +42,8 @@ kotlin {
         browser()
         nodejs()
     }
-    @OptIn(ExperimentalWasmDsl::class) wasmJs {
+    @OptIn(ExperimentalWasmDsl::class)
+    wasmJs {
         browser()
         nodejs()
         d8()
@@ -67,7 +68,8 @@ dokka {
     dokkaSourceSets {
         configureEach {
             sourceLink {
-                remoteUrl = uri("https://github.com/xfqwdsj/dsl-utilities/tree/v${version}/${project.name}")
+                remoteUrl =
+                    uri("https://github.com/xfqwdsj/dsl-utilities/tree/v${version}/${project.name}")
             }
             documentedVisibilities(VisibilityModifier.Public, VisibilityModifier.Protected)
         }

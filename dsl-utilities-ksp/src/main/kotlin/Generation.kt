@@ -17,9 +17,9 @@ import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 
 /**
- * Generates the code for one spec. Returns `false` when the spec should be
- * deferred to a later round because it only references unresolvable types;
- * diagnostics for genuine errors are reported before returning `true`.
+ * Generates the code for one spec. Returns `false` when the spec should be deferred to a later
+ * round because it only references unresolvable types; diagnostics for genuine errors are reported
+ * before returning `true`.
  */
 internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver): Boolean {
     val specName = spec.simpleName.asString()
@@ -28,14 +28,18 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
     val names = Names.of(specName, annotation)
 
     if (spec.classKind != ClassKind.INTERFACE) {
-        logger.error("@DslBuilder applies to interfaces, but $specName is a ${spec.classKind}.", spec)
+        logger.error(
+            "@DslBuilder applies to interfaces, but $specName is a ${spec.classKind}.",
+            spec,
+        )
         return true
     }
     if (names.resultName == specName || names.builderName == specName) {
-        val reused = listOfNotNull(
-            "resultName".takeIf { names.resultName == specName },
-            "builderName".takeIf { names.builderName == specName },
-        )
+        val reused =
+            listOfNotNull(
+                "resultName".takeIf { names.resultName == specName },
+                "builderName".takeIf { names.builderName == specName },
+            )
         logger.error(
             "@DslBuilder of $specName must not reuse the interface name for ${reused.joinToString(" and ")}.",
             spec,
@@ -46,11 +50,14 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         logger.error("The result and builder names of $specName must differ from each other.", spec)
         return true
     }
-    if (names.generateFunction && names.functionName in setOf(names.resultName, names.builderName)) {
-        val conflicting = listOfNotNull(
-            "resultName".takeIf { names.functionName == names.resultName },
-            "builderName".takeIf { names.functionName == names.builderName },
-        )
+    if (
+        names.generateFunction && names.functionName in setOf(names.resultName, names.builderName)
+    ) {
+        val conflicting =
+            listOfNotNull(
+                "resultName".takeIf { names.functionName == names.resultName },
+                "builderName".takeIf { names.functionName == names.builderName },
+            )
         logger.error(
             "@DslBuilder.functionName of $specName must differ from ${conflicting.joinToString(" and ")}, so calls resolve to the generated function.",
             spec,
@@ -61,10 +68,11 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         logger.error("@DslBuilder.functionName of $specName requires generateFunction.", spec)
         return true
     }
-    val invalidNames = listOfNotNull(
-        "resultName (${names.resultName})".takeIf { !isSimpleIdentifier(names.resultName) },
-        "builderName (${names.builderName})".takeIf { !isSimpleIdentifier(names.builderName) },
-    )
+    val invalidNames =
+        listOfNotNull(
+            "resultName (${names.resultName})".takeIf { !isSimpleIdentifier(names.resultName) },
+            "builderName (${names.builderName})".takeIf { !isSimpleIdentifier(names.builderName) },
+        )
     if (invalidNames.isNotEmpty()) {
         logger.error(
             "@DslBuilder of $specName must use a simple identifier for ${invalidNames.joinToString(" and ")}.",
@@ -110,8 +118,9 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         val dslValue = property.annotation(DSL_VALUE_ANNOTATION)
         val dslList = property.annotation(DSL_LIST_ANNOTATION)
 
-        if (dslValue?.string("resultName")?.isNotEmpty() == true ||
-            dslList?.string("resultName")?.isNotEmpty() == true
+        if (
+            dslValue?.string("resultName")?.isNotEmpty() == true ||
+                dslList?.string("resultName")?.isNotEmpty() == true
         ) {
             checker.report(
                 property,
@@ -134,31 +143,38 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
             continue
         }
         if (dslValue != null && dslList != null) {
-            checker.report(property, "Property $name must not be annotated with both @DslValue and @DslList.")
+            checker.report(
+                property,
+                "Property $name must not be annotated with both @DslValue and @DslList.",
+            )
             continue
         }
         val declarationType = property.type.resolve()
         val type = checker.substituteType(declarationType, member.environment)
         if (dslList != null) {
-            listProperty(name, property, type, declarationType, dslList, checker)?.let(listProperties::add)
+            listProperty(name, property, type, declarationType, dslList, checker)
+                ?.let(listProperties::add)
         } else if (!property.isMutable) {
             requiredProperty(
-                name,
-                property,
-                type,
-                declarationType,
-                dslValue,
-                checker,
-            )?.let(requiredProperties::add)
+                    name,
+                    property,
+                    type,
+                    declarationType,
+                    dslValue,
+                    checker,
+                )
+                ?.let(requiredProperties::add)
         } else if (dslValue != null) {
-            valueProperty(name, property, type, declarationType, dslValue, checker)?.let(valueProperties::add)
+            valueProperty(name, property, type, declarationType, dslValue, checker)
+                ?.let(valueProperties::add)
         } else {
             checker.report(property, "Property $name must be annotated with @DslValue or @DslList.")
         }
     }
 
     val abstractFunctions = hierarchy.abstractFunctions(spec)
-    val specMemberNames = specProperties.mapTo(mutableSetOf()) { it.declaration.simpleName.asString() }
+    val specMemberNames =
+        specProperties.mapTo(mutableSetOf()) { it.declaration.simpleName.asString() }
     for ((name, overloads) in abstractFunctions.groupBy { it.declaration.simpleName.asString() }) {
         if (overloads.size > 1) {
             checker.report(
@@ -171,9 +187,10 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         val function = member.declaration
         specMemberNames += function.simpleName.asString()
         if (function.isAbstract) continue
-        if (function.annotation(DSL_CHILD_ANNOTATION) != null ||
-            function.annotation(DSL_VALUE_ANNOTATION) != null ||
-            function.annotation(DSL_LIST_ANNOTATION) != null
+        if (
+            function.annotation(DSL_CHILD_ANNOTATION) != null ||
+                function.annotation(DSL_VALUE_ANNOTATION) != null ||
+                function.annotation(DSL_LIST_ANNOTATION) != null
         ) {
             checker.report(
                 function,
@@ -181,9 +198,10 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
             )
         }
         if (function.getVisibility() == Visibility.PRIVATE) continue
-        if (function.simpleName.asString() == BUILD_FUNCTION &&
-            function.parameters.isEmpty() &&
-            function.extensionReceiver == null
+        if (
+            function.simpleName.asString() == BUILD_FUNCTION &&
+                function.parameters.isEmpty() &&
+                function.extensionReceiver == null
         ) {
             checker.report(
                 function,
@@ -199,21 +217,29 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         val listAnnotation = function.annotation(DSL_LIST_ANNOTATION)
         if (listOfNotNull(childAnnotation, valueAnnotation, listAnnotation).size > 1) {
             checker.report(function, "Function $name must have exactly one DSL annotation.")
-        } else when {
-            childAnnotation != null -> childScope(name, function, member.environment, checker)?.let(childScopes::add)
-            valueAnnotation != null -> valueFunction(function, member.environment, valueAnnotation, checker)?.let(
-                valueProperties::add,
-            )
+        } else
+            when {
+                childAnnotation != null ->
+                    childScope(name, function, member.environment, checker)?.let(childScopes::add)
 
-            listAnnotation != null -> listFunction(function, member.environment, listAnnotation, checker)?.let(
-                listProperties::add,
-            )
+                valueAnnotation != null ->
+                    valueFunction(function, member.environment, valueAnnotation, checker)
+                        ?.let(
+                            valueProperties::add,
+                        )
 
-            else -> checker.report(
-                function,
-                "Function $name must be annotated with @DslChild, @DslValue or @DslList.",
-            )
-        }
+                listAnnotation != null ->
+                    listFunction(function, member.environment, listAnnotation, checker)
+                        ?.let(
+                            listProperties::add,
+                        )
+
+                else ->
+                    checker.report(
+                        function,
+                        "Function $name must be annotated with @DslChild, @DslValue or @DslList.",
+                    )
+            }
     }
 
     val resultNames = buildList {
@@ -223,7 +249,8 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         childScopes.mapTo(this) { it.name }
     }
     for ((name, count) in resultNames.groupingBy { it }.eachCount()) {
-        if (count > 1) checker.report(spec, "Result property $name is produced by multiple DSL members.")
+        if (count > 1)
+            checker.report(spec, "Result property $name is produced by multiple DSL members.")
     }
     val generatedPropertyNames = buildSet {
         addAll(requiredProperties.map { it.name })
@@ -239,15 +266,18 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         }
     }
 
-    val memberNames = hierarchy.functionNames(spec) +
-            specProperties.map { it.declaration.simpleName.asString() }
+    val memberNames =
+        hierarchy.functionNames(spec) + specProperties.map { it.declaration.simpleName.asString() }
     val childOwners = mutableMapOf<String, String>()
     val scopeOwners = mutableMapOf<String, String>()
     for (property in listProperties) {
         if (property.scopeName.isNotEmpty()) {
             val previous = scopeOwners.putIfAbsent(property.scopeName, property.name)
             if (previous != null || property.scopeName in hierarchy.functionNames(spec)) {
-                checker.report(spec, "Named list scope ${property.scopeName} conflicts with another DSL function.")
+                checker.report(
+                    spec,
+                    "Named list scope ${property.scopeName} conflicts with another DSL function.",
+                )
             }
         }
         for (child in property.children) {
@@ -257,8 +287,10 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
                     "Child helper ${child.functionName} of @DslList property ${property.name} conflicts with a DSL member.",
                 )
             }
-            val previousOwner = if (property.scopeName.isEmpty())
-                childOwners.putIfAbsent(child.functionName, property.name) else null
+            val previousOwner =
+                if (property.scopeName.isEmpty())
+                    childOwners.putIfAbsent(child.functionName, property.name)
+                else null
             if (previousOwner != null && previousOwner != property.name) {
                 checker.report(
                     spec,
@@ -286,7 +318,10 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
     val resolvedResultPropertyTypes = buildMap {
         for (property in requiredProperties) put(property.name, property.type)
         for (property in valueProperties) put(property.name, property.type)
-        for (property in listProperties) put(property.name, checker.immutableListType(property.elementType))
+        for (property in listProperties) put(
+            property.name,
+            checker.immutableListType(property.elementType),
+        )
         // A child scope's property type is the generated concrete result
         // class, which is not resolvable while it is generated. Its declared
         // result supertype (when any) carries the assignability; the special
@@ -323,9 +358,12 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
             val rendered = checker.renderTypeName(property, expectedType) ?: break
             val provided = resultPropertyTypes[name]
             val resolvedProvided = resolvedResultPropertyTypes[name]
-            val compatible = provided == rendered ||
+            val compatible =
+                provided == rendered ||
                     resolvedProvided?.let(expectedType::isAssignableFrom) == true ||
-                    childScopesByName[name]?.let { acceptsChildResult(expectedType, it.child, checker) } == true
+                    childScopesByName[name]?.let {
+                        acceptsChildResult(expectedType, it.child, checker)
+                    } == true
             when {
                 // Result properties are read-only constructor values: a
                 // mutable supertype member can never be overridden by one,
@@ -369,56 +407,67 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
                 continue
             }
             val name = function.simpleName.asString()
-            val componentIndex = name.removePrefix("component").toIntOrNull()
-                ?.takeIf { name == "component$it" }
-            val parameters = function.parameters.map { parameter ->
-                checker.substituteType(parameter.type.resolve(), member.environment)
-            }
-            val returnType = function.returnType?.resolve()
-                ?.let { checker.substituteType(it, member.environment) }
+            val componentIndex =
+                name.removePrefix("component").toIntOrNull()?.takeIf { name == "component$it" }
+            val parameters =
+                function.parameters.map { parameter ->
+                    checker.substituteType(parameter.type.resolve(), member.environment)
+                }
+            val returnType =
+                function.returnType?.resolve()?.let {
+                    checker.substituteType(it, member.environment)
+                }
             // A `componentK` declaration shares the name and the empty
             // parameter list of the synthesized member for the K-th result
             // property; the synthesized `copy` carries default values and
             // cannot override a declaration with the same parameter types.
             val componentPosition = componentIndex?.takeIf { it in 1..resultProperties.size }
-            val componentProperty = if (function.typeParameters.isEmpty() && parameters.isEmpty()) {
-                componentPosition?.let { resultProperties[it - 1] }
-            } else {
-                null
-            }
-            val synthesizedCopy = name == "copy" &&
+            val componentProperty =
+                if (function.typeParameters.isEmpty() && parameters.isEmpty()) {
+                    componentPosition?.let { resultProperties[it - 1] }
+                } else {
+                    null
+                }
+            val synthesizedCopy =
+                name == "copy" &&
                     function.typeParameters.isEmpty() &&
                     parameters.size == resultProperties.size &&
                     parameters.zip(resultProperties).all { (parameter, property) ->
                         property.first !in childScopesByName &&
-                                resolvedResultPropertyTypes[property.first]?.let {
-                                    checker.sameType(
-                                        parameter,
-                                        it,
-                                    )
-                                } == true
+                            resolvedResultPropertyTypes[property.first]?.let {
+                                checker.sameType(
+                                    parameter,
+                                    it,
+                                )
+                            } == true
                     }
-            val implementable = when {
-                componentProperty != null -> {
-                    val provided = if (componentProperty.first in childScopesByName) {
-                        childScopesByName.getValue(componentProperty.first).child.resultSupertype
-                    } else {
-                        resolvedResultPropertyTypes[componentProperty.first]
-                    }
-                    returnType != null &&
+            val implementable =
+                when {
+                    componentProperty != null -> {
+                        val provided =
+                            if (componentProperty.first in childScopesByName) {
+                                childScopesByName
+                                    .getValue(componentProperty.first)
+                                    .child
+                                    .resultSupertype
+                            } else {
+                                resolvedResultPropertyTypes[componentProperty.first]
+                            }
+                        returnType != null &&
                             (provided?.let(returnType::isAssignableFrom) == true ||
-                                    (provided == null && returnType.declaration.isClass(ANY)))
+                                (provided == null && returnType.declaration.isClass(ANY)))
+                    }
+
+                    name == "equals" && function.typeParameters.isEmpty() && parameters.size == 1 ->
+                        parameters.single().isMarkedNullable &&
+                            parameters.single().declaration.isClass(ANY)
+
+                    (name == "hashCode" || name == "toString") &&
+                        function.typeParameters.isEmpty() &&
+                        parameters.isEmpty() -> true
+
+                    else -> false
                 }
-
-                name == "equals" && function.typeParameters.isEmpty() && parameters.size == 1 ->
-                    parameters.single().isMarkedNullable && parameters.single().declaration.isClass(ANY)
-
-                (name == "hashCode" || name == "toString") &&
-                        function.typeParameters.isEmpty() && parameters.isEmpty() ->
-                    true
-
-                else -> false
-            }
             when {
                 function.isAbstract && !implementable ->
                     checker.report(
@@ -427,7 +476,8 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
                     )
 
                 !function.isAbstract &&
-                        (synthesizedCopy || (componentPosition != null && parameters.isEmpty() && !implementable)) ->
+                    (synthesizedCopy ||
+                        (componentPosition != null && parameters.isEmpty() && !implementable)) ->
                     checker.report(
                         spec,
                         "The result supertype ${supertypeDeclaration.simpleName.asString()} declares function $name, which conflicts with the generated data class member $name.",
@@ -436,20 +486,24 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         }
     }
     if (!checker.valid) return handled(checker)
-    val resultVisibility = restrictiveVisibility(
-        listOfNotNull(
-            visibility,
-            resultSupertype?.visibility,
-            *childScopes.map { it.child.resultVisibility }.toTypedArray(),
-        ),
-    )
+    val resultVisibility =
+        restrictiveVisibility(
+            listOfNotNull(
+                visibility,
+                resultSupertype?.visibility,
+                *childScopes.map { it.child.resultVisibility }.toTypedArray(),
+            ),
+        )
 
     // Every generated name is registered in the file context, which backs
     // both the uniqueness of generated names and the aliasing of
     // references that would otherwise be captured.
-    val context = FileContext(
-        declarationsInPackage(resolver, packageName).mapTo(mutableSetOf()) { it.simpleName.asString() },
-    )
+    val context =
+        FileContext(
+            declarationsInPackage(resolver, packageName).mapTo(mutableSetOf()) {
+                it.simpleName.asString()
+            },
+        )
     specMemberNames.forEach(context::register)
     context.register(names.builderName)
     context.register(names.resultName)
@@ -465,13 +519,17 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
     }
     for (property in valueProperties) {
         property.fieldName = context.fileName("${property.name}Field")
-        if (property.required) property.isSetFieldName = context.fileName("${property.fieldName}IsSet")
+        if (property.required)
+            property.isSetFieldName = context.fileName("${property.fieldName}IsSet")
     }
     for (property in listProperties) {
         property.fieldName = context.fileName("${property.name}Field")
         if (property.scopeName.isNotEmpty()) {
             property.scopeTypeName =
-                ClassName(packageName, "${names.builderName}${property.name.replaceFirstChar { it.uppercase() }}Scope")
+                ClassName(
+                    packageName,
+                    "${names.builderName}${property.name.replaceFirstChar { it.uppercase() }}Scope",
+                )
             context.register(property.scopeTypeName!!.simpleName)
             context.register(property.scopeName)
         }
@@ -508,82 +566,107 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
         checker,
     )
     if (!checker.valid) return handled(checker)
-    val builderType = builderType(
-        specTypeName,
-        builderTypeName,
-        resultTypeName,
-        listOf(visibility),
-        resultVisibility,
-        requiredProperties,
-        valueProperties,
-        listProperties,
-        childScopes,
-        buildHook,
-        context,
-    )
-    val resultType =
-        resultType(resultTypeName, resultVisibility, resultProperties, supertypeTypeName, supertypeOverrides)
-    val elementFunctions = elementFunctions(specTypeName, visibility, listProperties, context)
-    val buildFunction = if (names.generateFunction) {
-        buildFunction(
-            names,
+    val builderType =
+        builderType(
             specTypeName,
-            resultVisibility,
             builderTypeName,
             resultTypeName,
+            listOf(visibility),
+            resultVisibility,
             requiredProperties,
-            requireConfiguration,
+            valueProperties,
+            listProperties,
+            childScopes,
+            buildHook,
             context,
         )
-    } else {
-        null
-    }
+    val resultType =
+        resultType(
+            resultTypeName,
+            resultVisibility,
+            resultProperties,
+            supertypeTypeName,
+            supertypeOverrides,
+        )
+    val elementFunctions = elementFunctions(specTypeName, visibility, listProperties, context)
+    val buildFunction =
+        if (names.generateFunction) {
+            buildFunction(
+                names,
+                specTypeName,
+                resultVisibility,
+                builderTypeName,
+                resultTypeName,
+                requiredProperties,
+                requireConfiguration,
+                context,
+            )
+        } else {
+            null
+        }
 
     val optInDeclarations = buildList {
         add(spec)
-        addAll(specProperties.filter { hierarchy.isAbstract(it.declaration) }.map { it.declaration })
+        addAll(
+            specProperties.filter { hierarchy.isAbstract(it.declaration) }.map { it.declaration },
+        )
         addAll(abstractFunctions.map { it.declaration })
         resultSupertype?.declaration?.let { supertype ->
             add(supertype)
             addAll(
-                hierarchy.allProperties(supertype)
+                hierarchy
+                    .allProperties(supertype)
                     .filter { it.declaration.getVisibility() != Visibility.PRIVATE }
                     .map { it.declaration },
             )
             addAll(
-                hierarchy.allFunctions(supertype)
+                hierarchy
+                    .allFunctions(supertype)
                     .filter { it.declaration.getVisibility() != Visibility.PRIVATE }
                     .map { it.declaration },
             )
         }
     }
-    val fileSpec = FileSpec.builder(packageName, names.builderName)
-        .addFileComment("Generated by dsl-utilities-ksp from %L. Do not edit.", specQualifiedName)
-        .apply { fileOptIns(optInDeclarations)?.let(::addAnnotation) }
-        .addType(builderType)
-        .apply { namedListScopes(visibility, listProperties).forEach(::addType) }
-        .addFunctions(elementFunctions.functions)
-        .addProperties(elementFunctions.shorthands)
-        .addType(resultType)
-        .apply {
-            buildFunction?.let(::addFunction)
-            context.applyTo(this)
-        }
-        .build()
+    val fileSpec =
+        FileSpec.builder(packageName, names.builderName)
+            .addFileComment(
+                "Generated by dsl-utilities-ksp from %L. Do not edit.",
+                specQualifiedName,
+            )
+            .apply { fileOptIns(optInDeclarations)?.let(::addAnnotation) }
+            .addType(builderType)
+            .apply { namedListScopes(visibility, listProperties).forEach(::addType) }
+            .addFunctions(elementFunctions.functions)
+            .addProperties(elementFunctions.shorthands)
+            .addType(resultType)
+            .apply {
+                buildFunction?.let(::addFunction)
+                context.applyTo(this)
+            }
+            .build()
 
-    val file = try {
-        codeGenerator.createNewFile(
-            Dependencies(aggregating = true, *spec.containingFile?.let { arrayOf(it) } ?: emptyArray()),
-            packageName,
-            names.builderName,
-        )
-    } catch (_: FileAlreadyExistsException) {
-        // Another processor can create the same output path first; report
-        // the conflict as a diagnostic instead of letting the build crash.
-        val qualifiedName = if (packageName.isEmpty()) names.builderName else "$packageName.${names.builderName}"
-        checker.report(spec, "Generated type $qualifiedName is also produced by another declaration.")
-        return handled(checker)
-    }
+    val file =
+        try {
+            codeGenerator.createNewFile(
+                Dependencies(
+                    aggregating = true,
+                    *spec.containingFile?.let { arrayOf(it) } ?: emptyArray(),
+                ),
+                packageName,
+                names.builderName,
+            )
+        } catch (_: FileAlreadyExistsException) {
+            // Another processor can create the same output path first; report
+            // the conflict as a diagnostic instead of letting the build crash.
+            val qualifiedName =
+                if (packageName.isEmpty()) names.builderName
+                else "$packageName.${names.builderName}"
+            checker.report(
+                spec,
+                "Generated type $qualifiedName is also produced by another declaration.",
+            )
+            return handled(checker)
+        }
     OutputStreamWriter(file, StandardCharsets.UTF_8).use { writer ->
         writer.write(fileSpec.toString())
     }
@@ -591,9 +674,9 @@ internal fun DslProcessor.generate(spec: KSClassDeclaration, resolver: Resolver)
 }
 
 /**
- * Reports buffered diagnostics and returns `true` when the spec was
- * handled in this round. A spec whose failures are all unresolved
- * types stays unreported so the caller can defer it to a later round.
+ * Reports buffered diagnostics and returns `true` when the spec was handled in this round. A spec
+ * whose failures are all unresolved types stays unreported so the caller can defer it to a later
+ * round.
  */
 private fun handled(checker: Checker): Boolean {
     if (checker.onlyUnresolved()) return false

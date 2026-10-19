@@ -8,10 +8,7 @@ import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.ksp.toClassName
 
-/**
- * Carries lexical opt-ins from source declarations into their generated
- * file.
- */
+/** Carries lexical opt-ins from source declarations into their generated file. */
 internal fun fileOptIns(declarations: Iterable<KSDeclaration>): AnnotationSpec? {
     val markers = linkedSetOf<ClassName>()
     val sources = linkedSetOf<KSAnnotated>()
@@ -33,12 +30,15 @@ internal fun fileOptIns(declarations: Iterable<KSDeclaration>): AnnotationSpec? 
         }
     }
     if (markers.isEmpty()) return null
-    val arguments = CodeBlock.builder().apply {
-        markers.forEachIndexed { index, marker ->
-            if (index > 0) add(", ")
-            add("%T::class", marker)
-        }
-    }.build()
+    val arguments =
+        CodeBlock.builder()
+            .apply {
+                markers.forEachIndexed { index, marker ->
+                    if (index > 0) add(", ")
+                    add("%T::class", marker)
+                }
+            }
+            .build()
     return AnnotationSpec.builder(OPT_IN)
         .useSiteTarget(AnnotationSpec.UseSiteTarget.FILE)
         .addMember("%L", arguments)

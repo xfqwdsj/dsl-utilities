@@ -16,10 +16,9 @@ import com.squareup.kotlinpoet.UNIT
 import com.squareup.kotlinpoet.joinToCode
 
 /**
- * Builds the generated builder class: the required properties arrive
- * as constructor parameters, the mutable members are stored in private
- * fields, and the spec members are overridden with the validation and
- * mapping logic wired inline into the accessors.
+ * Builds the generated builder class: the required properties arrive as constructor parameters, the
+ * mutable members are stored in private fields, and the spec members are overridden with the
+ * validation and mapping logic wired inline into the accessors.
  */
 internal fun builderType(
     specTypeName: ClassName,
@@ -34,18 +33,21 @@ internal fun builderType(
     buildHook: Instantiation?,
     context: FileContext,
 ): TypeSpec {
-    val builder = TypeSpec.classBuilder(builderTypeName)
-        .addModifiers(visibility)
-        .primaryConstructor(
-            FunSpec.constructorBuilder()
-                .apply {
-                    for (property in requiredProperties) {
-                        addParameter(ParameterSpec.builder(property.name, property.typeName).build())
+    val builder =
+        TypeSpec.classBuilder(builderTypeName)
+            .addModifiers(visibility)
+            .primaryConstructor(
+                FunSpec.constructorBuilder()
+                    .apply {
+                        for (property in requiredProperties) {
+                            addParameter(
+                                ParameterSpec.builder(property.name, property.typeName).build(),
+                            )
+                        }
                     }
-                }
-                .build(),
-        )
-        .addSuperinterface(specTypeName)
+                    .build(),
+            )
+            .addSuperinterface(specTypeName)
 
     for (property in requiredProperties) {
         // The same-named property initialized from the constructor
@@ -58,20 +60,23 @@ internal fun builderType(
         )
     }
     for (property in valueProperties) {
-        val initialValue = property.initialProvider?.let {
-            CodeBlock.of("%L.provide()", it.code(context))
-        } ?: property.initialValue ?: CodeBlock.of("null")
-        val initializer = if (property.mapper != null && !property.required) {
-            CodeBlock.of("%L.toStored(%L)", property.mapper.code(context), initialValue)
-        } else {
-            initialValue
-        }
+        val initialValue =
+            property.initialProvider?.let {
+                CodeBlock.of("%L.provide()", it.code(context))
+            } ?: property.initialValue ?: CodeBlock.of("null")
+        val initializer =
+            if (property.mapper != null && !property.required) {
+                CodeBlock.of("%L.toStored(%L)", property.mapper.code(context), initialValue)
+            } else {
+                initialValue
+            }
         builder.addProperty(
             PropertySpec.builder(
-                property.nameField(),
-                if (property.required) property.storageTypeName.copy(nullable = true) else property.storageTypeName,
-                KModifier.PRIVATE,
-            )
+                    property.nameField(),
+                    if (property.required) property.storageTypeName.copy(nullable = true)
+                    else property.storageTypeName,
+                    KModifier.PRIVATE,
+                )
                 .mutable(true)
                 .initializer(initializer)
                 .build(),
@@ -79,21 +84,25 @@ internal fun builderType(
         if (property.required) {
             builder.addProperty(
                 PropertySpec.builder(property.isSetFieldName, BOOLEAN, KModifier.PRIVATE)
-                    .mutable(true).initializer("false").build(),
+                    .mutable(true)
+                    .initializer("false")
+                    .build(),
             )
         }
     }
     for (property in listProperties) {
-        val initializer = property.hook?.let {
-            CodeBlock.of("%L(%L)", context.expression(HOOKED_DSL_LIST), it.code(context))
-        } ?: CodeBlock.of("%L()", context.member(MUTABLE_LIST_OF))
+        val initializer =
+            property.hook?.let {
+                CodeBlock.of("%L(%L)", context.expression(HOOKED_DSL_LIST), it.code(context))
+            } ?: CodeBlock.of("%L()", context.member(MUTABLE_LIST_OF))
         builder.addProperty(
             PropertySpec.builder(
-                property.nameField(),
-                if (property.hook == null) MUTABLE_LIST.parameterizedBy(property.elementTypeName)
-                else HOOKED_DSL_LIST.parameterizedBy(property.elementTypeName),
-                KModifier.PRIVATE,
-            )
+                    property.nameField(),
+                    if (property.hook == null)
+                        MUTABLE_LIST.parameterizedBy(property.elementTypeName)
+                    else HOOKED_DSL_LIST.parameterizedBy(property.elementTypeName),
+                    KModifier.PRIVATE,
+                )
                 .initializer(initializer)
                 .build(),
         )
@@ -101,10 +110,10 @@ internal fun builderType(
     for (property in childScopes) {
         builder.addProperty(
             PropertySpec.builder(
-                property.nameField(),
-                property.child.resultType.asNullable(),
-                KModifier.PRIVATE,
-            )
+                    property.nameField(),
+                    property.child.resultType.asNullable(),
+                    KModifier.PRIVATE,
+                )
                 .mutable(true)
                 .initializer("null")
                 .build(),
@@ -123,65 +132,80 @@ internal fun builderType(
             )
             continue
         }
-        val getter = FunSpec.getterBuilder()
-            .apply {
-                if (property.hook != null) {
-                    addStatement("%L.beforeAccess()", property.hook.code(context))
-                }
-                if (property.required) {
-                    addStatement(
-                        "%L(%N) { %S }",
-                        context.member(CHECK),
-                        property.isSetFieldName,
-                        "Property ${property.name} is required.",
-                    )
-                }
-                if (property.mapper == null) {
-                    if (property.required && !property.typeName.isNullable) addStatement(
-                        "return %N as %T",
-                        property.nameField(),
-                        property.typeName,
-                    )
-                    else addStatement("return %N", property.nameField())
-                } else {
-                    if (property.required) addStatement(
-                        "return %L.toValue(%N as %T)",
-                        property.mapper.code(context), property.nameField(), property.storageTypeName,
-                    ) else addStatement("return %L.toValue(%N)", property.mapper.code(context), property.nameField())
-                }
-            }
-            .build()
-        val setter = FunSpec.setterBuilder()
-            .addParameter(VALUE_PARAMETER, property.typeName)
-            .apply {
-                if (property.hook != null) {
-                    addStatement("%L.beforeSet($VALUE_PARAMETER)", property.hook.code(context))
-                }
-                if (property.mapper == null) {
-                    if (property.validator != null) {
+        val getter =
+            FunSpec.getterBuilder()
+                .apply {
+                    if (property.hook != null) {
+                        addStatement("%L.beforeAccess()", property.hook.code(context))
+                    }
+                    if (property.required) {
                         addStatement(
-                            "%L(%L.validate($VALUE_PARAMETER)) { %L }",
-                            context.member(REQUIRE),
-                            property.validator.code(context),
-                            literalString(property.message),
+                            "%L(%N) { %S }",
+                            context.member(CHECK),
+                            property.isSetFieldName,
+                            "Property ${property.name} is required.",
                         )
                     }
-                    addStatement("%N = $VALUE_PARAMETER", property.nameField())
-                } else {
-                    addStatement("val $STORED_VALUE = %L.toStored($VALUE_PARAMETER)", property.mapper.code(context))
-                    if (property.validator != null) {
-                        addStatement(
-                            "%L(%L.validate($STORED_VALUE)) { %L }",
-                            context.member(REQUIRE),
-                            property.validator.code(context),
-                            literalString(property.message),
-                        )
+                    if (property.mapper == null) {
+                        if (property.required && !property.typeName.isNullable)
+                            addStatement(
+                                "return %N as %T",
+                                property.nameField(),
+                                property.typeName,
+                            )
+                        else addStatement("return %N", property.nameField())
+                    } else {
+                        if (property.required)
+                            addStatement(
+                                "return %L.toValue(%N as %T)",
+                                property.mapper.code(context),
+                                property.nameField(),
+                                property.storageTypeName,
+                            )
+                        else
+                            addStatement(
+                                "return %L.toValue(%N)",
+                                property.mapper.code(context),
+                                property.nameField(),
+                            )
                     }
-                    addStatement("%N = $STORED_VALUE", property.nameField())
                 }
-                if (property.required) addStatement("%N = true", property.isSetFieldName)
-            }
-            .build()
+                .build()
+        val setter =
+            FunSpec.setterBuilder()
+                .addParameter(VALUE_PARAMETER, property.typeName)
+                .apply {
+                    if (property.hook != null) {
+                        addStatement("%L.beforeSet($VALUE_PARAMETER)", property.hook.code(context))
+                    }
+                    if (property.mapper == null) {
+                        if (property.validator != null) {
+                            addStatement(
+                                "%L(%L.validate($VALUE_PARAMETER)) { %L }",
+                                context.member(REQUIRE),
+                                property.validator.code(context),
+                                literalString(property.message),
+                            )
+                        }
+                        addStatement("%N = $VALUE_PARAMETER", property.nameField())
+                    } else {
+                        addStatement(
+                            "val $STORED_VALUE = %L.toStored($VALUE_PARAMETER)",
+                            property.mapper.code(context),
+                        )
+                        if (property.validator != null) {
+                            addStatement(
+                                "%L(%L.validate($STORED_VALUE)) { %L }",
+                                context.member(REQUIRE),
+                                property.validator.code(context),
+                                literalString(property.message),
+                            )
+                        }
+                        addStatement("%N = $STORED_VALUE", property.nameField())
+                    }
+                    if (property.required) addStatement("%N = true", property.isSetFieldName)
+                }
+                .build()
         builder.addProperty(
             PropertySpec.builder(property.name, property.typeName, KModifier.OVERRIDE)
                 .mutable(true)
@@ -217,30 +241,34 @@ internal fun builderType(
             )
             continue
         }
-        val setter = FunSpec.setterBuilder()
-            .addParameter(VALUE_PARAMETER, property.typeName)
-            .addStatement("val $SNAPSHOT = $VALUE_PARAMETER.%L()", context.member(TO_LIST))
-            .apply {
-                if (property.hook == null) {
-                    addStatement("%N.clear()", property.nameField())
-                    addStatement("%N.addAll($SNAPSHOT)", property.nameField())
-                } else {
-                    addStatement("%N.replaceWith($SNAPSHOT)", property.nameField())
+        val setter =
+            FunSpec.setterBuilder()
+                .addParameter(VALUE_PARAMETER, property.typeName)
+                .addStatement("val $SNAPSHOT = $VALUE_PARAMETER.%L()", context.member(TO_LIST))
+                .apply {
+                    if (property.hook == null) {
+                        addStatement("%N.clear()", property.nameField())
+                        addStatement("%N.addAll($SNAPSHOT)", property.nameField())
+                    } else {
+                        addStatement("%N.replaceWith($SNAPSHOT)", property.nameField())
+                    }
                 }
-            }
-            .build()
+                .build()
         builder.addProperty(
             PropertySpec.builder(
-                property.name,
-                property.typeName,
-                KModifier.OVERRIDE,
-            )
+                    property.name,
+                    property.typeName,
+                    KModifier.OVERRIDE,
+                )
                 .mutable(true)
                 .getter(
-                    FunSpec.getterBuilder().apply {
-                        if (property.hook != null) addStatement("%L.beforeAccess()", property.hook.code(context))
-                        addStatement("return %N", property.nameField())
-                    }.build(),
+                    FunSpec.getterBuilder()
+                        .apply {
+                            if (property.hook != null)
+                                addStatement("%L.beforeAccess()", property.hook.code(context))
+                            addStatement("return %N", property.nameField())
+                        }
+                        .build(),
                 )
                 .setter(setter)
                 .build(),
@@ -248,7 +276,8 @@ internal fun builderType(
     }
 
     for (property in childScopes) {
-        val parameters = property.parameters.map { ParameterSpec.builder(it.name, it.typeName).build() } +
+        val parameters =
+            property.parameters.map { ParameterSpec.builder(it.name, it.typeName).build() } +
                 ParameterSpec.builder(property.blockName, property.blockTypeName).build()
         val arguments = requiredArguments(property.child.required)
         val scope = context.scope()
@@ -273,12 +302,13 @@ internal fun builderType(
     val buildCode = CodeBlock.builder()
     if (buildHook != null) buildCode.addStatement("%L.beforeBuild(this)", buildHook.code(context))
     for (property in valueProperties) {
-        if (property.required) buildCode.addStatement(
-            "%L(%N) { %S }",
-            context.member(CHECK),
-            property.isSetFieldName,
-            "Property ${property.name} is required.",
-        )
+        if (property.required)
+            buildCode.addStatement(
+                "%L(%N) { %S }",
+                context.member(CHECK),
+                property.isSetFieldName,
+                "Property ${property.name} is required.",
+            )
     }
     for (property in requiredProperties) {
         if (property.validator != null) {
@@ -336,9 +366,9 @@ internal fun builderType(
 }
 
 /**
- * Builds the immutable result class. Matching properties of the result
- * supertype are overridden; the constructor properties back the data class
- * semantics of equality, copy and component functions.
+ * Builds the immutable result class. Matching properties of the result supertype are overridden;
+ * the constructor properties back the data class semantics of equality, copy and component
+ * functions.
  */
 internal fun resultType(
     resultTypeName: ClassName,
@@ -348,8 +378,9 @@ internal fun resultType(
     overrides: Set<String>,
 ): TypeSpec {
     val classModifiers = if (resultProperties.isEmpty()) listOf() else listOf(KModifier.DATA)
-    val builder = TypeSpec.classBuilder(resultTypeName)
-        .addModifiers(visibility, *classModifiers.toTypedArray())
+    val builder =
+        TypeSpec.classBuilder(resultTypeName)
+            .addModifiers(visibility, *classModifiers.toTypedArray())
     if (resultProperties.isNotEmpty()) {
         builder.primaryConstructor(
             FunSpec.constructorBuilder()
@@ -375,9 +406,8 @@ internal fun resultType(
 }
 
 /**
- * Builds the element functions of the declared list children together with
- * the property shorthands of children that declare no required properties
- * and no `@DslChild` functions.
+ * Builds the element functions of the declared list children together with the property shorthands
+ * of children that declare no required properties and no `@DslChild` functions.
  */
 internal fun elementFunctions(
     specTypeName: ClassName,
@@ -390,15 +420,21 @@ internal fun elementFunctions(
     for (property in listProperties) {
         val receiver = property.scopeTypeName ?: specTypeName
         if (property.scopeTypeName != null) {
-            functions += FunSpec.builder(property.scopeName)
-                .addModifiers(parentVisibility, KModifier.INLINE)
-                .receiver(specTypeName)
-                .addParameter(
-                    BLOCK_PARAMETER,
-                    LambdaTypeName.get(receiver = receiver, returnType = UNIT),
-                )
-                .addStatement("%L(this.%N).%N()", context.expression(receiver), property.name, BLOCK_PARAMETER)
-                .build()
+            functions +=
+                FunSpec.builder(property.scopeName)
+                    .addModifiers(parentVisibility, KModifier.INLINE)
+                    .receiver(specTypeName)
+                    .addParameter(
+                        BLOCK_PARAMETER,
+                        LambdaTypeName.get(receiver = receiver, returnType = UNIT),
+                    )
+                    .addStatement(
+                        "%L(this.%N).%N()",
+                        context.expression(receiver),
+                        property.name,
+                        BLOCK_PARAMETER,
+                    )
+                    .build()
         }
         for (child in property.children) {
             val scope = context.scope()
@@ -406,54 +442,64 @@ internal fun elementFunctions(
             val blockName = scope.newName(BLOCK_PARAMETER)
             val childBuilderName = scope.newName(CHILD_BUILDER_LOCAL)
             val arguments = requiredArguments(child.required)
-            val visibility = restrictiveVisibility(
-                listOf(parentVisibility, child.builderVisibility, child.resultVisibility),
-            )
-            functions += FunSpec.builder(child.functionName)
-                .addModifiers(visibility, KModifier.INLINE)
-                .receiver(receiver)
-                .apply {
-                    for (required in child.required) addParameter(requiredParameter(required))
-                }
-                .addParameter(
-                    ParameterSpec.builder(
-                        blockName,
-                        LambdaTypeName.get(
-                            receiver = child.specTypeName,
-                            returnType = UNIT,
-                        ),
-                    )
-                        .apply {
-                            if (!child.requiresConfiguration) defaultValue("{}")
-                        }
-                        .build(),
+            val visibility =
+                restrictiveVisibility(
+                    listOf(parentVisibility, child.builderVisibility, child.resultVisibility),
                 )
-                .addStatement(
-                    "val %N = %L(%L)",
-                    childBuilderName,
-                    context.expression(child.builderType),
-                    arguments,
-                )
-                .addStatement("%N.invoke(%N)", blockName, childBuilderName)
-                .apply {
-                    if (property.scopeTypeName == null) {
-                        addStatement("this.%N.add(%N.$BUILD_FUNCTION())", property.name, childBuilderName)
-                    } else {
-                        addStatement("this.elements.add(%N.$BUILD_FUNCTION())", childBuilderName)
-                    }
-                }
-                .build()
-            if (child.required.isEmpty() && !child.requiresConfiguration) {
-                shorthands += PropertySpec.builder(child.functionName, UNIT)
-                    .addModifiers(visibility)
+            functions +=
+                FunSpec.builder(child.functionName)
+                    .addModifiers(visibility, KModifier.INLINE)
                     .receiver(receiver)
-                    .getter(
-                        FunSpec.getterBuilder()
-                            .addModifiers(KModifier.INLINE)
-                            .addStatement("%N()", child.functionName)
+                    .apply {
+                        for (required in child.required) addParameter(requiredParameter(required))
+                    }
+                    .addParameter(
+                        ParameterSpec.builder(
+                                blockName,
+                                LambdaTypeName.get(
+                                    receiver = child.specTypeName,
+                                    returnType = UNIT,
+                                ),
+                            )
+                            .apply {
+                                if (!child.requiresConfiguration) defaultValue("{}")
+                            }
                             .build(),
                     )
+                    .addStatement(
+                        "val %N = %L(%L)",
+                        childBuilderName,
+                        context.expression(child.builderType),
+                        arguments,
+                    )
+                    .addStatement("%N.invoke(%N)", blockName, childBuilderName)
+                    .apply {
+                        if (property.scopeTypeName == null) {
+                            addStatement(
+                                "this.%N.add(%N.$BUILD_FUNCTION())",
+                                property.name,
+                                childBuilderName,
+                            )
+                        } else {
+                            addStatement(
+                                "this.elements.add(%N.$BUILD_FUNCTION())",
+                                childBuilderName,
+                            )
+                        }
+                    }
                     .build()
+            if (child.required.isEmpty() && !child.requiresConfiguration) {
+                shorthands +=
+                    PropertySpec.builder(child.functionName, UNIT)
+                        .addModifiers(visibility)
+                        .receiver(receiver)
+                        .getter(
+                            FunSpec.getterBuilder()
+                                .addModifiers(KModifier.INLINE)
+                                .addStatement("%N()", child.functionName)
+                                .build(),
+                        )
+                        .build()
             }
         }
     }
@@ -475,7 +521,11 @@ internal fun namedListScopes(
         )
         .addSuperinterface(DSL_LIST_SCOPE.parameterizedBy(property.elementTypeName))
         .addProperty(
-            PropertySpec.builder("elements", MUTABLE_LIST.parameterizedBy(property.elementTypeName), KModifier.OVERRIDE)
+            PropertySpec.builder(
+                    "elements",
+                    MUTABLE_LIST.parameterizedBy(property.elementTypeName),
+                    KModifier.OVERRIDE,
+                )
                 .initializer("elements")
                 .build(),
         )
@@ -483,8 +533,8 @@ internal fun namedListScopes(
 }
 
 /**
- * Builds the top-level entry point that creates the builder, runs the DSL
- * block and returns the built result.
+ * Builds the top-level entry point that creates the builder, runs the DSL block and returns the
+ * built result.
  */
 internal fun buildFunction(
     names: Names,
@@ -510,9 +560,9 @@ internal fun buildFunction(
         }
         .addParameter(
             ParameterSpec.builder(
-                blockName,
-                LambdaTypeName.get(receiver = specTypeName, returnType = UNIT),
-            )
+                    blockName,
+                    LambdaTypeName.get(receiver = specTypeName, returnType = UNIT),
+                )
                 .apply { if (!requireConfiguration) defaultValue("{}") }
                 .build(),
         )
@@ -524,9 +574,9 @@ internal fun buildFunction(
 }
 
 /**
- * Builds the parameter of a required property for the generated inline
- * entry points. A function-typed parameter cannot be passed to the
- * non-inline builder call from an inline function, so it is `noinline`.
+ * Builds the parameter of a required property for the generated inline entry points. A
+ * function-typed parameter cannot be passed to the non-inline builder call from an inline function,
+ * so it is `noinline`.
  */
 private fun requiredParameter(property: RequiredProperty): ParameterSpec =
     ParameterSpec.builder(property.name, property.typeName)
@@ -537,15 +587,9 @@ private fun requiredParameter(property: RequiredProperty): ParameterSpec =
         }
         .build()
 
-/**
- * Builds escaped `name = name` constructor arguments for required
- * properties.
- */
+/** Builds escaped `name = name` constructor arguments for required properties. */
 private fun requiredArguments(properties: List<RequiredProperty>): CodeBlock =
     properties.map { CodeBlock.of("%N = %N", it.name, it.name) }.joinToCode(", ")
 
-/**
- * Returns a copy of this type with the nullable marker set; every other
- * property is preserved.
- */
+/** Returns a copy of this type with the nullable marker set; every other property is preserved. */
 private fun TypeName.asNullable(): TypeName = copy(nullable = true)

@@ -9,9 +9,9 @@ import com.google.devtools.ksp.symbol.KSTypeParameter
 import com.google.devtools.ksp.symbol.Modifier
 
 /**
- * A member of a DslBuilder interface together with the type-parameter
- * environment of the class declaring it, so types declared against
- * generic bases resolve from the perspective of the analyzed class.
+ * A member of a DslBuilder interface together with the type-parameter environment of the class
+ * declaring it, so types declared against generic bases resolve from the perspective of the
+ * analyzed class.
  */
 internal class SubstitutedMember<T : KSDeclaration>(
     val declaration: T,
@@ -19,17 +19,18 @@ internal class SubstitutedMember<T : KSDeclaration>(
 )
 
 /**
- * Walks the supertype hierarchy of a DslBuilder interface and collects the
- * abstract members the generated declarations must override. The nearest
- * declaration wins when a name is redeclared along the hierarchy; an
- * unresolvable supertype defers the spec to a later round.
+ * Walks the supertype hierarchy of a DslBuilder interface and collects the abstract members the
+ * generated declarations must override. The nearest declaration wins when a name is redeclared
+ * along the hierarchy; an unresolvable supertype defers the spec to a later round.
  */
 internal class Hierarchy(
     private val checker: Checker,
     private val reportedStarProjections: MutableSet<String>,
 ) {
 
-    fun abstractFunctions(declaration: KSClassDeclaration): List<SubstitutedMember<KSFunctionDeclaration>> {
+    fun abstractFunctions(
+        declaration: KSClassDeclaration,
+    ): List<SubstitutedMember<KSFunctionDeclaration>> {
         val members = LinkedHashMap<String, SubstitutedMember<KSFunctionDeclaration>>()
         val seen = mutableSetOf<String>()
         walk(declaration, emptyMap()) { member, environment, _ ->
@@ -47,13 +48,14 @@ internal class Hierarchy(
     }
 
     /**
-     * Collects every function of the hierarchy, abstract or concrete, so
-     * the caller can diagnose annotations placed on functions that declare
-     * their own body. Sibling declarations of one signature merge into the
-     * declaration with the most specific return type, which is the one an
+     * Collects every function of the hierarchy, abstract or concrete, so the caller can diagnose
+     * annotations placed on functions that declare their own body. Sibling declarations of one
+     * signature merge into the declaration with the most specific return type, which is the one an
      * implementing class must satisfy.
      */
-    fun allFunctions(declaration: KSClassDeclaration): List<SubstitutedMember<KSFunctionDeclaration>> {
+    fun allFunctions(
+        declaration: KSClassDeclaration,
+    ): List<SubstitutedMember<KSFunctionDeclaration>> {
         val members = LinkedHashMap<String, SubstitutedMember<KSFunctionDeclaration>>()
         walk(declaration, emptyMap()) { member, environment, _ ->
             if (member !is KSFunctionDeclaration) return@walk
@@ -65,10 +67,7 @@ internal class Hierarchy(
         return members.values.toList()
     }
 
-    /**
-     * Collects declared function names across the hierarchy for
-     * extension-collision checks.
-     */
+    /** Collects declared function names across the hierarchy for extension-collision checks. */
     fun functionNames(declaration: KSClassDeclaration): Set<String> = buildSet {
         walk(declaration, emptyMap()) { member, _, _ ->
             if (member is KSFunctionDeclaration) add(member.simpleName.asString())
@@ -76,10 +75,9 @@ internal class Hierarchy(
     }
 
     /**
-     * Collects every property of the hierarchy, abstract or concrete, so the
-     * caller can tell override candidates from members that must be provided.
-     * A declaration at the nearest depth wins; compatible siblings at the same
-     * depth are merged by override specificity.
+     * Collects every property of the hierarchy, abstract or concrete, so the caller can tell
+     * override candidates from members that must be provided. A declaration at the nearest depth
+     * wins; compatible siblings at the same depth are merged by override specificity.
      */
     fun allProperties(
         declaration: KSClassDeclaration,
@@ -89,10 +87,11 @@ internal class Hierarchy(
         walk(declaration, initialEnvironment) { member, environment, depth ->
             if (member !is KSPropertyDeclaration) return@walk
             val name = member.simpleName.asString()
-            candidates.getOrPut(name, ::mutableListOf) += PropertyCandidate(
-                SubstitutedMember(member, environment),
-                depth,
-            )
+            candidates.getOrPut(name, ::mutableListOf) +=
+                PropertyCandidate(
+                    SubstitutedMember(member, environment),
+                    depth,
+                )
         }
         return candidates.mapNotNull { (name, declarations) ->
             selectProperty(declaration, name, declarations)
@@ -109,10 +108,15 @@ internal class Hierarchy(
         if (nearest.size == 1) return nearest.single()
 
         val types = nearest.associateWith { member ->
-            checker.expandAliases(checker.substituteType(member.declaration.type.resolve(), member.environment))
+            checker.expandAliases(
+                checker.substituteType(member.declaration.type.resolve(), member.environment),
+            )
         }
         if (types.values.any { it.isError }) {
-            checker.reportUnresolved(root, "An inherited type of property $name is not resolvable yet.")
+            checker.reportUnresolved(
+                root,
+                "An inherited type of property $name is not resolvable yet.",
+            )
             return nearest.first()
         }
         fun overrides(
@@ -120,15 +124,17 @@ internal class Hierarchy(
             other: SubstitutedMember<KSPropertyDeclaration>,
         ): Boolean {
             if (candidate === other) return true
-            val candidateOwnerIsNarrower = checker.ownerIsSubtypeOf(candidate.declaration, other.declaration, root)
-            val otherOwnerIsNarrower = checker.ownerIsSubtypeOf(other.declaration, candidate.declaration, root)
+            val candidateOwnerIsNarrower =
+                checker.ownerIsSubtypeOf(candidate.declaration, other.declaration, root)
+            val otherOwnerIsNarrower =
+                checker.ownerIsSubtypeOf(other.declaration, candidate.declaration, root)
             if (candidateOwnerIsNarrower != otherOwnerIsNarrower) return candidateOwnerIsNarrower
             val candidateType = types.getValue(candidate)
             val otherType = types.getValue(other)
             return if (other.declaration.isMutable) {
                 candidate.declaration.isMutable &&
-                        checker.accepts(otherType, candidateType, root) &&
-                        checker.accepts(candidateType, otherType, root)
+                    checker.accepts(otherType, candidateType, root) &&
+                    checker.accepts(candidateType, otherType, root)
             } else {
                 checker.accepts(otherType, candidateType, root)
             }
@@ -139,14 +145,16 @@ internal class Hierarchy(
         val concrete = dominant.filterNot { it.declaration.isAbstractMember() }
         if (concrete.size == 1) return concrete.single()
 
-        val renderedTypes = nearest.mapNotNull { checker.typeNameOrNull(types.getValue(it)) }
-            .distinct()
-            .joinToString()
+        val renderedTypes =
+            nearest
+                .mapNotNull { checker.typeNameOrNull(types.getValue(it)) }
+                .distinct()
+                .joinToString()
         checker.report(
             root,
             "Inherited property $name has no unique most-specific declaration" +
-                    renderedTypes.takeIf { it.isNotEmpty() }?.let { " among types $it" }.orEmpty() +
-                    "; redeclare it in ${root.simpleName.asString()}.",
+                renderedTypes.takeIf { it.isNotEmpty() }?.let { " among types $it" }.orEmpty() +
+                "; redeclare it in ${root.simpleName.asString()}.",
         )
         return nearest.first()
     }
@@ -155,11 +163,10 @@ internal class Hierarchy(
     fun isAbstract(property: KSPropertyDeclaration): Boolean = property.isAbstractMember()
 
     /**
-     * Returns `true` when the property is abstract in its declaring interface,
-     * so generated code must override it. KSP synthesizes accessors for
-     * properties without declared ones, and synthesized accessors of abstract
-     * properties carry the abstract modifier; an accessor with a body or a
-     * backing field makes the property concrete.
+     * Returns `true` when the property is abstract in its declaring interface, so generated code
+     * must override it. KSP synthesizes accessors for properties without declared ones, and
+     * synthesized accessors of abstract properties carry the abstract modifier; an accessor with a
+     * body or a backing field makes the property concrete.
      */
     private fun KSPropertyDeclaration.isAbstractMember(): Boolean {
         if (hasBackingField) return false
@@ -202,8 +209,9 @@ internal class Hierarchy(
                     }
                     continue
                 }
-                val nextEnvironment = superDeclaration.typeParameters.zip(resolved.arguments)
-                    .associate { (parameter, argument) ->
+                val nextEnvironment =
+                    superDeclaration.typeParameters.zip(resolved.arguments).associate {
+                        (parameter, argument) ->
                         val argumentType = requireNotNull(argument.type).resolve()
                         parameter to checker.substituteType(argumentType, environment)
                     }
@@ -225,19 +233,21 @@ internal class Hierarchy(
 }
 
 /**
- * Returns the declaration that stands for both [first] and [second] when
- * one signature is inherited more than once: the more specific return
- * type wins, and the nearer declaration wins when the return types denote
- * the same type. Kotlin rejects an inheritance whose return types are
+ * Returns the declaration that stands for both [first] and [second] when one signature is inherited
+ * more than once: the more specific return type wins, and the nearer declaration wins when the
+ * return types denote the same type. Kotlin rejects an inheritance whose return types are
  * unrelated, so that case keeps the first declaration.
  */
 private fun Checker.moreSpecific(
     first: SubstitutedMember<KSFunctionDeclaration>,
     second: SubstitutedMember<KSFunctionDeclaration>,
 ): SubstitutedMember<KSFunctionDeclaration> {
-    val firstType = first.declaration.returnType?.resolve()?.let { substituteType(it, first.environment) }
-    val secondType = second.declaration.returnType?.resolve()?.let { substituteType(it, second.environment) }
-    if (firstType == null || secondType == null || firstType.isError || secondType.isError) return first
+    val firstType =
+        first.declaration.returnType?.resolve()?.let { substituteType(it, first.environment) }
+    val secondType =
+        second.declaration.returnType?.resolve()?.let { substituteType(it, second.environment) }
+    if (firstType == null || secondType == null || firstType.isError || secondType.isError)
+        return first
     return when {
         secondType.isAssignableFrom(firstType) -> first
         firstType.isAssignableFrom(secondType) -> second

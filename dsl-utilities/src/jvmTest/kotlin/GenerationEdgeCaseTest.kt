@@ -13,7 +13,7 @@ class GenerationEdgeCaseTest {
     @Test
     fun `private interface helpers do not affect generated members`() {
         assertEquals("ok", buildPrivateResultMembers(name = "ok").name)
-        assertEquals(1, buildPrivateBuildHelper { }.value)
+        assertEquals(1, buildPrivateBuildHelper {}.value)
     }
 
     @OptIn(ExperimentalDslType::class)
@@ -141,21 +141,30 @@ class GenerationEdgeCaseTest {
 
     @Test
     fun `escaped initial values survive the generated file`() {
-        val builder = File("build/generated/ksp")
-            .walkTopDown()
-            .firstOrNull { it.name == "EscapedCharInitialDslBuilder.kt" }
+        val builder =
+            File("build/generated/ksp").walkTopDown().firstOrNull {
+                it.name == "EscapedCharInitialDslBuilder.kt"
+            }
         assertNotNull(builder, "EscapedCharInitialDslBuilder.kt was not generated")
         val text = builder.readText()
-        val escapes = listOf(
-            "'\\u0000'", "'\\u0008'", "'\\u007f'", "'\\u2028'", "'\\u2029'",
-            "'\\ufeff'", "'\\ue000'", "'\\u0378'", "'\\ud800'",
-        )
+        val escapes =
+            listOf(
+                "'\\u0000'",
+                "'\\u0008'",
+                "'\\u007f'",
+                "'\\u2028'",
+                "'\\u2029'",
+                "'\\ufeff'",
+                "'\\ue000'",
+                "'\\u0378'",
+                "'\\ud800'",
+            )
         for (escape in escapes) {
             assertTrue(text.contains(escape), text)
         }
         assertTrue(text.contains("\"lone \\ud800 surrogate\""), text)
 
-        val result = buildEscapedCharInitial { }
+        val result = buildEscapedCharInitial {}
         assertEquals('\u0000', result.nul)
         assertEquals('\u0008', result.backspace)
         assertEquals('\u007f', result.delete)
@@ -170,15 +179,16 @@ class GenerationEdgeCaseTest {
 
     @Test
     fun `floating point initial values keep their shortest literal`() {
-        val builder = File("build/generated/ksp")
-            .walkTopDown()
-            .firstOrNull { it.name == "FloatingPointInitialDslBuilder.kt" }
+        val builder =
+            File("build/generated/ksp").walkTopDown().firstOrNull {
+                it.name == "FloatingPointInitialDslBuilder.kt"
+            }
         assertNotNull(builder, "FloatingPointInitialDslBuilder.kt was not generated")
         val text = builder.readText()
         assertTrue(text.contains("= 0.1f"), text)
         assertTrue(text.contains("= 1.0E30f"), text)
 
-        val result = buildFloatingPointInitial { }
+        val result = buildFloatingPointInitial {}
         assertEquals(0.1f, result.ratio)
         assertEquals(1e30f, result.huge)
         assertEquals(1e-320, result.tiny)
@@ -186,9 +196,10 @@ class GenerationEdgeCaseTest {
 
     @Test
     fun `surrogate messages are escaped in the generated literal`() {
-        val builder = File("build/generated/ksp")
-            .walkTopDown()
-            .firstOrNull { it.name == "EscapedMessageDslBuilder.kt" }
+        val builder =
+            File("build/generated/ksp").walkTopDown().firstOrNull {
+                it.name == "EscapedMessageDslBuilder.kt"
+            }
         assertNotNull(builder, "EscapedMessageDslBuilder.kt was not generated")
         val text = builder.readText()
         assertTrue(text.contains("\"value \\ud800 message\""), text)
@@ -201,9 +212,10 @@ class GenerationEdgeCaseTest {
 
     @Test
     fun `inner classes of generic outer classes keep their enclosing type`() {
-        val builder = File("build/generated/ksp")
-            .walkTopDown()
-            .firstOrNull { it.name == "GenericOuterInnerDslBuilder.kt" }
+        val builder =
+            File("build/generated/ksp").walkTopDown().firstOrNull {
+                it.name == "GenericOuterInnerDslBuilder.kt"
+            }
         assertNotNull(builder, "GenericOuterInnerDslBuilder.kt was not generated")
         val text = builder.readText()
         assertTrue(text.contains("GenericOuter<String>.GenericInner<Int>"), text)
@@ -222,7 +234,7 @@ class GenerationEdgeCaseTest {
 
     @Test
     fun `a member named Long keeps the minimum value literal intact`() {
-        val result = buildShadowedLongInitial { }
+        val result = buildShadowedLongInitial {}
 
         assertEquals(Long.MIN_VALUE, result.Long)
     }

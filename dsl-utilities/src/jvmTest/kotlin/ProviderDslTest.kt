@@ -1,5 +1,8 @@
 package top.ltfan.dslutilities.test
 
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import top.ltfan.dslutilities.DslBuilder
 import top.ltfan.dslutilities.DslChild
 import top.ltfan.dslutilities.DslInitialProvider
@@ -7,9 +10,6 @@ import top.ltfan.dslutilities.DslList
 import top.ltfan.dslutilities.DslListHook
 import top.ltfan.dslutilities.DslValue
 import top.ltfan.dslutilities.DslValueHook
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 
 internal object PositiveValueHook : DslValueHook<Int> {
     override fun beforeSet(value: Int) {
@@ -29,26 +29,21 @@ internal object NextValue : DslInitialProvider<Int> {
     override fun provide(): Int = ++next
 }
 
-@DslBuilder
-internal interface HookedDslListChildDsl
+@DslBuilder internal interface HookedDslListChildDsl
 
 @DslBuilder
 internal interface ProviderDsl {
-    @DslValue(provider = NextValue::class, hook = PositiveValueHook::class)
-    var value: Int
+    @DslValue(provider = NextValue::class, hook = PositiveValueHook::class) var value: Int
 
-    @DslList(hook = PositiveListHook::class)
-    var values: MutableList<Int>
+    @DslList(hook = PositiveListHook::class) var values: MutableList<Int>
 }
 
 @Suppress("TestFunctionName")
 @DslBuilder
 internal interface HookedListNameCollisionDsl {
-    @DslList(hook = PositiveListHook::class)
-    var values: MutableList<Int>
+    @DslList(hook = PositiveListHook::class) var values: MutableList<Int>
 
-    @DslChild
-    fun HookedDslList(block: HookedDslListChildDsl.() -> Unit = {})
+    @DslChild fun HookedDslList(block: HookedDslListChildDsl.() -> Unit = {})
 }
 
 class ProviderDslTest {
